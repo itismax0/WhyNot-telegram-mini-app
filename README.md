@@ -1,2 +1,5 @@
-# WhyNot-telegram-mini-app
-an ecosystem based on the $WhyNot token
+# WhyNot? Wallet
+Multichain crypto-wallet on Telegram Mini apps
+
+## Build
+```npm run build``` - command for Build
