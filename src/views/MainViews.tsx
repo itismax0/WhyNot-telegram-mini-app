@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -10,9 +10,26 @@ import {
 	ChevronDown,
 	Copy,
 	Settings,
+	Clock,
 } from "lucide-react";
 import { useWallet } from "../store/WalletContext";
-import { ASSETS, sendTransaction, fetchBalances } from "../services/blockchain";
+
+import {
+	ASSETS,
+	sendTransaction,
+	fetchBalances,
+	fetchTransactions,
+	resolveUsername,
+} from "../services/blockchain";
+
+interface WalletTransaction {
+	hash: string;
+	type: "send" | "receive";
+	value: number;
+	from: string;
+	to: string;
+	timestamp: number;
+}
 
 const copyTextToClipboard = (text: string): boolean => {
 	if (navigator.clipboard && window.isSecureContext) {
@@ -55,9 +72,11 @@ const Combobox = ({
 				className="w-full bg-[#111] border border-[#222] rounded-2xl p-4 flex justify-between items-center cursor-pointer hover:bg-[#151515] active:scale-[0.99] transition-all"
 			>
 				<div className="flex items-center gap-3">
-					<div className="w-8 h-8 bg-[#222] rounded-full flex items-center justify-center font-mono font-bold text-[10px]">
-						{value.symbol.slice(0, 3)}
-					</div>
+					<img
+						src={value.icon}
+						alt={value.symbol}
+						className="w-8 h-8 rounded-full bg-[#222] object-contain p-1"
+					/>
 					<span className="font-semibold text-sm">
 						{value.name} ({value.network})
 					</span>
@@ -85,9 +104,11 @@ const Combobox = ({
 								}}
 								className="p-4 hover:bg-[#1a1a1a] flex items-center gap-3 cursor-pointer border-b border-[#1c1c1c] last:border-0"
 							>
-								<div className="w-8 h-8 bg-[#222] rounded-full flex items-center justify-center font-mono font-bold text-[10px]">
-									{opt.symbol.slice(0, 3)}
-								</div>
+								<img
+									src={opt.icon}
+									alt={opt.symbol}
+									className="w-8 h-8 rounded-full bg-[#222] object-contain p-1"
+								/>
 								<div>
 									<div className="font-semibold text-sm">
 										{opt.name}
@@ -162,6 +183,11 @@ export const MainView = () => {
 						icon: <ArrowUpRight size={24} />,
 						label: t("send"),
 					},
+					{
+						id: "history",
+						icon: <Clock size={24} />,
+						label: t("history"),
+					},
 				].map((btn) => (
 					<div
 						key={btn.id}
@@ -192,9 +218,11 @@ export const MainView = () => {
 								className="flex items-center justify-between p-4 bg-[#0a0a0a] rounded-2xl border border-[#1a1a1a] hover:bg-[#111] transition-colors cursor-pointer"
 							>
 								<div className="flex items-center gap-4">
-									<div className="w-12 h-12 bg-[#1a1a1a] rounded-full flex items-center justify-center border border-[#2a2a2a] text-xs font-bold font-mono text-gray-300">
-										{asset.symbol.slice(0, 3)}
-									</div>
+									<img
+										src={asset.icon}
+										alt={asset.symbol}
+										className="w-12 h-12 rounded-full bg-[#111] object-contain p-2 border border-[#1a1a1a]"
+									/>
 									<div>
 										<h4 className="font-semibold text-base mb-0.5">
 											{asset.name}
@@ -293,11 +321,25 @@ export const SendView = () => {
 
 	const handleSend = async () => {
 		setLoading(true);
+		let targetAddress = address.trim();
+
+		if (targetAddress.startsWith("@")) {
+			try {
+				showToast("Resolving Username...");
+				targetAddress = await resolveUsername(targetAddress);
+				showToast(`Resolved to: ${targetAddress.slice(0, 8)}...`);
+			} catch (err: any) {
+				showToast(t("username_error"));
+				setLoading(false);
+				return;
+			}
+		}
+
 		try {
 			await sendTransaction(
 				wallets,
 				asset.id,
-				address,
+				targetAddress,
 				Number(amount),
 				networkMode
 			);
@@ -361,7 +403,7 @@ export const SendView = () => {
 				</label>
 				<input
 					type="text"
-					placeholder={`Enter ${asset.network} address...`}
+					placeholder={`Enter address or @username`}
 					value={address}
 					onChange={(e) => setAddress(e.target.value)}
 					className="w-full bg-transparent outline-none font-mono text-sm placeholder-gray-700 break-all select-text"
@@ -387,6 +429,105 @@ export const SendView = () => {
 					)}
 				</button>
 			</div>
+		</motion.div>
+	);
+};
+
+export const HistoryView = () => {
+	const { setView, wallets, networkMode, t } = useWallet();
+	const [txs, setTxs] = useState<WalletTransaction[]>([]);
+	const [loading, setLoading] = useState(true);
+
+	useEffect(() => {
+		const loadHistory = async () => {
+			setLoading(true);
+			const data = await fetchTransactions(
+				wallets.ton.address,
+				networkMode
+			);
+			setTxs(data);
+			setLoading(false);
+		};
+		loadHistory();
+	}, [wallets, networkMode]);
+
+	return (
+		<motion.div
+			initial={{ x: "100%" }}
+			animate={{ x: 0 }}
+			transition={{ type: "spring", damping: 25, stiffness: 200 }}
+			className="flex flex-col min-h-screen p-5"
+		>
+			<div className="flex items-center gap-4 mb-6 pt-2">
+				<button
+					onClick={() => setView("main")}
+					className="p-2 bg-[#111] rounded-full hover:bg-[#222] transition-colors"
+				>
+					<ChevronLeft size={20} />
+				</button>
+				<h2 className="font-medium text-lg">{t("history")}</h2>
+			</div>
+
+			<p className="text-xs text-gray-500 font-mono mb-6">
+				{t("history_desc")}
+			</p>
+
+			{loading ? (
+				<div className="flex-1 flex items-center justify-center">
+					<div className="loader" />
+				</div>
+			) : txs.length === 0 ? (
+				<div className="flex-1 flex flex-col items-center justify-center text-gray-500 font-mono">
+					<Clock size={32} className="mb-4 opacity-50" />
+					<p>{t("no_txs")}</p>
+				</div>
+			) : (
+				<div className="flex-1 overflow-y-auto space-y-4 pr-1">
+					{txs.map((tx) => (
+						<div
+							key={tx.hash}
+							className="flex items-center justify-between p-4 bg-[#0a0a0a] rounded-2xl border border-[#1a1a1a]"
+						>
+							<div className="flex items-center gap-3">
+								<div
+									className={`w-10 h-10 rounded-full flex items-center justify-center ${tx.type === "receive" ? "bg-green-950/40 text-green-500 border border-green-900/50" : "bg-[#111] text-gray-400 border border-[#222]"}`}
+								>
+									{tx.type === "receive" ? (
+										<ArrowDownToLine size={18} />
+									) : (
+										<ArrowUpRight size={18} />
+									)}
+								</div>
+								<div>
+									<h4 className="font-semibold text-sm capitalize">
+										{tx.type === "receive"
+											? "Received"
+											: "Sent"}
+									</h4>
+									<p className="text-[10px] text-gray-500 font-mono mt-0.5">
+										{tx.type === "receive"
+											? `From: ${tx.from.slice(0, 4)}...${tx.from.slice(-4)}`
+											: `To: ${tx.to.slice(0, 4)}...${tx.to.slice(-4)}`}
+									</p>
+								</div>
+							</div>
+							<div className="text-right">
+								<h4
+									className={`font-mono font-bold ${tx.type === "receive" ? "text-green-500" : "text-white"}`}
+								>
+									{tx.type === "receive" ? "+" : "-"}
+									{tx.value.toLocaleString()} TON
+								</h4>
+								<p className="text-[10px] text-gray-500 font-mono mt-1">
+									{new Date(
+										tx.timestamp
+									).toLocaleDateString()}
+								</p>
+							</div>
+						</div>
+					))}
+				</div>
+			)}
 		</motion.div>
 	);
 };

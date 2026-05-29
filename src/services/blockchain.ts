@@ -12,6 +12,49 @@ import {
 } from "@solana/web3.js";
 import { Buffer } from "buffer";
 
+export const ASSETS = [
+	{
+		id: "ton",
+		symbol: "TON",
+		name: "Toncoin",
+		network: "TON",
+		cmc_id: "the-open-network",
+		icon: "/icons/ton.png",
+	},
+	{
+		id: "eth",
+		symbol: "ETH",
+		name: "Ethereum",
+		network: "EVM",
+		cmc_id: "ethereum",
+		icon: "https://assets.coingecko.com/coins/images/279/large/ethereum.png",
+	},
+	{
+		id: "sol",
+		symbol: "SOL",
+		name: "Solana",
+		network: "Solana",
+		cmc_id: "solana",
+		icon: "https://assets.coingecko.com/coins/images/4128/large/solana.png",
+	},
+	{
+		id: "usdt",
+		symbol: "USDT",
+		name: "Tether",
+		network: "TON",
+		cmc_id: "tether",
+		icon: "https://assets.coingecko.com/coins/images/325/large/Tether.png",
+	},
+	{
+		id: "btc",
+		symbol: "BTC",
+		name: "Bitcoin",
+		network: "Bitcoin",
+		cmc_id: "bitcoin",
+		icon: "https://assets.coingecko.com/coins/images/1/large/bitcoin.png",
+	},
+];
+
 function getProviders(mode: "mainnet" | "testnet" | "devnet") {
 	if (mode === "mainnet") {
 		return {
@@ -46,44 +89,6 @@ function getProviders(mode: "mainnet" | "testnet" | "devnet") {
 		};
 	}
 }
-
-export const ASSETS = [
-	{
-		id: "ton",
-		symbol: "TON",
-		name: "Toncoin",
-		network: "TON",
-		cmc_id: "the-open-network",
-	},
-	{
-		id: "eth",
-		symbol: "ETH",
-		name: "Ethereum",
-		network: "EVM",
-		cmc_id: "ethereum",
-	},
-	{
-		id: "sol",
-		symbol: "SOL",
-		name: "Solana",
-		network: "Solana",
-		cmc_id: "solana",
-	},
-	{
-		id: "usdt",
-		symbol: "USDT",
-		name: "Tether",
-		network: "TON",
-		cmc_id: "tether",
-	},
-	{
-		id: "btc",
-		symbol: "BTC",
-		name: "Bitcoin",
-		network: "Bitcoin",
-		cmc_id: "bitcoin",
-	},
-];
 
 export async function generateWallets(mnemonic: string[]) {
 	const tonKeyPair = await mnemonicToPrivateKey(mnemonic);
@@ -178,5 +183,88 @@ export async function sendTransaction(
 		]);
 	} else {
 		throw new Error("Asset sending not supported in this version");
+	}
+}
+
+export interface WalletTransaction {
+	hash: string;
+	type: "send" | "receive";
+	value: number;
+	from: string;
+	to: string;
+	timestamp: number;
+}
+
+export async function fetchTransactions(
+	address: string,
+	mode: "mainnet" | "testnet" | "devnet"
+): Promise<WalletTransaction[]> {
+	const endpoint =
+		mode === "mainnet"
+			? "https://toncenter.com/api/v2/getTransactions"
+			: "https://testnet.toncenter.com/api/v2/getTransactions";
+
+	try {
+		const res = await fetch(`${endpoint}?address=${address}&limit=10`);
+		const data = await res.json();
+		if (data.ok && Array.isArray(data.result)) {
+			return data.result.map((tx: any) => {
+				const outMsg = tx.out_msgs?.[0];
+				const inMsg = tx.in_msg;
+				const isOut = outMsg !== undefined;
+				const msg = isOut ? outMsg : inMsg;
+				const value = msg ? Number(msg.value) / 1e9 : 0;
+				return {
+					hash: tx.transaction_id?.hash || "unknown",
+					type: isOut ? "send" : "receive",
+					value,
+					from: inMsg?.source || "",
+					to: outMsg?.destination || inMsg?.destination || "",
+					timestamp: tx.utime * 1000,
+				};
+			});
+		}
+		return [];
+	} catch (e) {
+		console.error("Error fetching transactions", e);
+		return [];
+	}
+}
+
+export async function registerUsername(username: string, tonAddress: string) {
+	if (!username) return;
+	const cleanUser = username.replace("@", "").trim().toLowerCase();
+	try {
+		await fetch(`https://kvdb.io/7zR8mWhynotWalletRegistry/${cleanUser}`, {
+			method: "POST",
+			body: tonAddress,
+		});
+		console.log(`Username @${cleanUser} registered to ${tonAddress}`);
+	} catch (e) {
+		console.error("Failed to register username", e);
+	}
+}
+
+export async function resolveUsername(username: string): Promise<string> {
+	const cleanUser = username.replace("@", "").trim().toLowerCase();
+	try {
+		const res = await fetch(
+			`https://kvdb.io/7zR8mWhynotWalletRegistry/${cleanUser}`
+		);
+		if (res.ok) {
+			const address = await res.text();
+			if (
+				address &&
+				(address.startsWith("EQ") ||
+					address.startsWith("UQ") ||
+					address.startsWith("0Q") ||
+					address.startsWith("kQ"))
+			) {
+				return address;
+			}
+		}
+		throw new Error("Not found");
+	} catch (e) {
+		throw new Error("Username not found in registry");
 	}
 }

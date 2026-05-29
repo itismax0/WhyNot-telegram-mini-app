@@ -6,11 +6,13 @@ type ViewState =
 	| "pin-create"
 	| "pin-repeat"
 	| "pin-enter"
+	| "pin-confirm-seed"
 	| "restore-prompt"
 	| "restore-input"
 	| "main"
 	| "receive"
 	| "send"
+	| "history"
 	| "settings";
 type NetworkMode = "mainnet" | "testnet" | "devnet";
 type Language = "en" | "ru";
@@ -19,36 +21,57 @@ const cloudStorage = (window as any).Telegram?.WebApp?.CloudStorage;
 
 export const getCloudItem = (key: string): Promise<string | null> => {
 	return new Promise((resolve) => {
-		if (!cloudStorage) {
+		if (!isCloudSupported() || !webApp?.CloudStorage) {
 			resolve(localStorage.getItem(key));
 			return;
 		}
-		cloudStorage.getItem(key, (err: any, value: string) => {
+		const timeout = setTimeout(() => {
+			resolve(localStorage.getItem(key));
+		}, 1000);
+		webApp.CloudStorage.getItem(key, (err: any, value: string) => {
+			clearTimeout(timeout);
 			if (err || !value) resolve(localStorage.getItem(key));
 			else resolve(value);
 		});
 	});
 };
 
+const webApp = (window as any).Telegram?.WebApp;
+const isCloudSupported = (): boolean => {
+	return (
+		webApp &&
+		typeof webApp.isVersionAtLeast === "function" &&
+		webApp.isVersionAtLeast("6.3")
+	);
+};
+
 export const setCloudItem = (key: string, value: string): Promise<void> => {
 	return new Promise((resolve) => {
 		localStorage.setItem(key, value);
-		if (!cloudStorage) {
+		if (!isCloudSupported() || !webApp?.CloudStorage) {
 			resolve();
 			return;
 		}
-		cloudStorage.setItem(key, value, () => resolve());
+		const timeout = setTimeout(() => resolve(), 1000);
+		webApp.CloudStorage.setItem(key, value, () => {
+			clearTimeout(timeout);
+			resolve();
+		});
 	});
 };
 
 export const removeCloudItem = (key: string): Promise<void> => {
 	return new Promise((resolve) => {
 		localStorage.removeItem(key);
-		if (!cloudStorage) {
+		if (!isCloudSupported() || !webApp?.CloudStorage) {
 			resolve();
 			return;
 		}
-		cloudStorage.removeItem(key, () => resolve());
+		const timeout = setTimeout(() => resolve(), 1000);
+		webApp.CloudStorage.removeItem(key, () => {
+			clearTimeout(timeout);
+			resolve();
+		});
 	});
 };
 
@@ -73,7 +96,7 @@ export const translations: Record<Language, Record<string, string>> = {
 		pin_mismatch: "PINs do not match",
 		available: "Available",
 		amount: "Amount",
-		recipient: "Recipient Address",
+		recipient: "Recipient Address or @username",
 		continue: "CONTINUE",
 		settings: "Settings",
 		network: "Network Mode",
@@ -81,9 +104,13 @@ export const translations: Record<Language, Record<string, string>> = {
 		view_seed: "View Seed Phrase",
 		logout: "Log Out / Wipe Wallet",
 		mainnet: "Mainnet",
-		testnet: "Testnet (Recommended for test)",
+		testnet: "Testnet (Recommended)",
 		devnet: "Devnet",
 		enter_pin_to_view: "Enter your PIN to view seed",
+		history: "History",
+		no_txs: "No transactions found",
+		history_desc: "Transactions loaded from the blockchain ledger",
+		username_error: "Recipient not found. Make sure they use WhyNot?",
 	},
 	ru: {
 		welcome_desc:
@@ -105,7 +132,7 @@ export const translations: Record<Language, Record<string, string>> = {
 		pin_mismatch: "ПИН-коды не совпадают",
 		available: "Доступно",
 		amount: "Сумма",
-		recipient: "Адрес получателя",
+		recipient: "Адрес получателя или @юзернейм",
 		continue: "ПРОДОЛЖИТЬ",
 		settings: "Настройки",
 		network: "Режим Сети",
@@ -113,9 +140,14 @@ export const translations: Record<Language, Record<string, string>> = {
 		view_seed: "Показать сид-фразу",
 		logout: "Выйти / Удалить кошелек",
 		mainnet: "Основная сеть",
-		testnet: "Тестнет (Для тестирования)",
+		testnet: "Тестнет",
 		devnet: "Девнет",
 		enter_pin_to_view: "Введите ПИН для просмотра сида",
+		history: "История",
+		no_txs: "Транзакции не найдены",
+		history_desc: "Транзакции загружены из блокчейн-реестра",
+		username_error:
+			"Получатель не найден. Убедитесь, что он использует WhyNot?",
 	},
 };
 
@@ -139,6 +171,8 @@ interface WalletContextType {
 	t: (key: string) => string;
 	tempPin: string;
 	setTempPin: (pin: string) => void;
+	seedRevealed: boolean;
+	setSeedRevealed: (v: boolean) => void;
 }
 
 const WalletContext = createContext<WalletContextType>({} as WalletContextType);
@@ -150,9 +184,10 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 	const [rates, setRates] = useState<Record<string, number>>({});
 	const [mnemonic, setMnemonic] = useState<string[]>([]);
 	const [toast, setToast] = useState<string | null>(null);
-	const [networkMode, setNetworkModeState] = useState<NetworkMode>("testnet");
+	const [networkMode, setNetworkModeState] = useState<NetworkMode>("mainnet");
 	const [language, setLanguageState] = useState<Language>("en");
 	const [tempPin, setTempPin] = useState<string>("");
+	const [seedRevealed, setSeedRevealed] = useState<boolean>(false);
 
 	useEffect(() => {
 		const savedLang = localStorage.getItem("wallet_lang") as Language;
@@ -202,6 +237,8 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 				t,
 				tempPin,
 				setTempPin,
+				seedRevealed,
+				setSeedRevealed,
 			}}
 		>
 			{children}

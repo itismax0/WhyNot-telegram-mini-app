@@ -1,5 +1,3 @@
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, Key, LogOut, Globe, Server } from "lucide-react";
 import { useWallet, removeCloudItem } from "../store/WalletContext";
 
@@ -13,10 +11,9 @@ export const SettingsView = () => {
 		mnemonic,
 		t,
 		showToast,
+		seedRevealed,
+		setSeedRevealed,
 	} = useWallet();
-	const [showSeed, setShowSeed] = useState(false);
-	const [pinPrompt, setPinPrompt] = useState(false);
-	const [pinInput, setPinInput] = useState("");
 
 	const handleLangChange = () => {
 		setLanguage(language === "en" ? "ru" : "en");
@@ -28,20 +25,12 @@ export const SettingsView = () => {
 	};
 
 	const handleViewSeed = () => {
-		setPinPrompt(true);
+		setView("pin-confirm-seed");
 	};
 
-	const handleVerifyPin = () => {
-		const encrypted = localStorage.getItem("wallet_data");
-		if (!encrypted) return;
-
-		try {
-			setPinPrompt(false);
-			setShowSeed(true);
-			setPinInput("");
-		} catch {
-			showToast("Wrong PIN code");
-		}
+	const handleBack = () => {
+		setSeedRevealed(false);
+		setView("main");
 	};
 
 	const handleWipeWallet = async () => {
@@ -65,7 +54,7 @@ export const SettingsView = () => {
 		>
 			<div className="flex items-center gap-4 mb-8 pt-2">
 				<button
-					onClick={() => setView("main")}
+					onClick={handleBack}
 					className="p-2 bg-[#111] rounded-full hover:bg-[#222] transition-colors"
 				>
 					<ChevronLeft size={20} />
@@ -108,7 +97,7 @@ export const SettingsView = () => {
 				</div>
 
 				<div className="bg-[#111] border border-[#222] rounded-2xl p-4 flex flex-col gap-4">
-					{!showSeed ? (
+					{!seedRevealed ? (
 						<button
 							onClick={handleViewSeed}
 							className="flex items-center gap-3 w-full text-left text-sm font-medium text-gray-300 hover:text-white transition-colors"
@@ -124,7 +113,7 @@ export const SettingsView = () => {
 									Your 24-Word Seed Phrase
 								</span>
 							</div>
-							<div className="bg-black p-4 rounded-xl border border-[#222] font-mono text-xs leading-relaxed text-red-500 selectable-text select-text">
+							<div className="bg-black p-4 rounded-xl border border-red-900/30 font-mono text-xs leading-relaxed text-red-500 selectable-text select-text">
 								{mnemonic.join(" ")}
 							</div>
 						</div>
@@ -139,47 +128,7 @@ export const SettingsView = () => {
 					{t("logout")}
 				</button>
 			</div>
-
-			<AnimatePresence>
-				{pinPrompt && (
-					<motion.div
-						initial={{ opacity: 0 }}
-						animate={{ opacity: 1 }}
-						exit={{ opacity: 0 }}
-						className="absolute inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-6"
-					>
-						<div className="w-full bg-[#111] border border-[#222] p-6 rounded-3xl flex flex-col items-center">
-							<h3 className="font-mono text-sm tracking-wide mb-6 uppercase text-gray-400">
-								{t("enter_pin_to_view")}
-							</h3>
-
-							<input
-								type="password"
-								maxLength={4}
-								value={pinInput}
-								onChange={(e) => setPinInput(e.target.value)}
-								placeholder="••••"
-								className="bg-black border border-[#222] rounded-xl px-4 py-3 text-center tracking-[1rem] font-mono text-2xl w-32 outline-none mb-6 select-text"
-							/>
-
-							<div className="flex gap-4 w-full">
-								<button
-									onClick={() => setPinPrompt(false)}
-									className="flex-1 py-3 bg-[#222] rounded-xl text-sm font-medium"
-								>
-									Cancel
-								</button>
-								<button
-									onClick={handleVerifyPin}
-									className="flex-1 py-3 bg-white text-black rounded-xl text-sm font-bold"
-								>
-									Confirm
-								</button>
-							</div>
-						</div>
-					</motion.div>
-				)}
-			</AnimatePresence>
 		</motion.div>
 	);
 };
+import { motion } from "framer-motion";
