@@ -17,8 +17,6 @@ type ViewState =
 type NetworkMode = "mainnet" | "testnet" | "devnet";
 type Language = "en" | "ru";
 
-const cloudStorage = (window as any).Telegram?.WebApp?.CloudStorage;
-
 export const getCloudItem = (key: string): Promise<string | null> => {
 	return new Promise((resolve) => {
 		if (!isCloudSupported() || !webApp?.CloudStorage) {

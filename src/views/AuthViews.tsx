@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Hexagon, ChevronLeft, FolderOpen, Import } from "lucide-react";
+import { ChevronLeft, FolderOpen, Import } from "lucide-react";
 import { mnemonicNew, mnemonicValidate } from "@ton/crypto";
 import { useWallet, setCloudItem, getCloudItem } from "../store/WalletContext";
 import { encryptData, decryptData } from "../services/crypto";
