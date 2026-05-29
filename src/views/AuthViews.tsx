@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Hexagon, ChevronLeft } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
+import { Icons } from "../icons/Icons"; 
 import { mnemonicNew, mnemonicValidate } from "@ton/crypto";
 import { useWallet, setCloudItem, getCloudItem } from "../store/WalletContext";
 import { encryptData, decryptData } from "../services/crypto";
@@ -18,10 +19,8 @@ export const WelcomeView = () => {
 		>
 			<div className="flex-1 flex flex-col items-center justify-center text-center">
 				<div className="w-24 h-24 mb-8 rounded-[2rem] bg-[#111] flex items-center justify-center border border-[#222] shadow-2xl">
-					<Hexagon
+					<Icons.LogoWhyNot
 						size={48}
-						strokeWidth={1.5}
-						className="text-white"
 					/>
 				</div>
 				<h1 className="text-3xl font-semibold mb-4 tracking-tight">
