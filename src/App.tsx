@@ -7,7 +7,12 @@ import {
 	RestorePromptView,
 	RestoreInputView,
 } from "./views/AuthViews";
-import { MainView, ReceiveView, SendView } from "./views/MainViews";
+import {
+	MainView,
+	ReceiveView,
+	SendView,
+	HistoryView,
+} from "./views/MainViews";
 import { SettingsView } from "./views/SettingsView";
 import { ASSETS } from "./services/blockchain";
 
@@ -98,6 +103,7 @@ const AppContent = () => {
 					{view === "main" && <MainView key="main" />}
 					{view === "receive" && <ReceiveView key="receive" />}
 					{view === "send" && <SendView key="send" />}
+					{view === "history" && <HistoryView key="history" />}
 					{view === "settings" && <SettingsView key="settings" />}
 				</AnimatePresence>
 			</div>
@@ -107,7 +113,7 @@ const AppContent = () => {
 
 export default function App() {
 	return (
-		<WalletProvider {...{}}>
+		<WalletProvider>
 			<AppContent />
 		</WalletProvider>
 	);

@@ -1,12 +1,16 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { ChevronLeft } from "lucide-react";
-import { Icons } from "../icons/Icons"; 
+import { Hexagon, ChevronLeft, FolderOpen, Import } from "lucide-react";
 import { mnemonicNew, mnemonicValidate } from "@ton/crypto";
 import { useWallet, setCloudItem, getCloudItem } from "../store/WalletContext";
 import { encryptData, decryptData } from "../services/crypto";
-import { generateWallets, fetchBalances } from "../services/blockchain";
+import {
+	generateWallets,
+	fetchBalances,
+	registerUsername,
+} from "../services/blockchain";
 import { PinPad } from "../components/PinPad";
+import { Icons } from "../icons/Icons";
 
 export const WelcomeView = () => {
 	const { setView, t } = useWallet();
@@ -19,9 +23,7 @@ export const WelcomeView = () => {
 		>
 			<div className="flex-1 flex flex-col items-center justify-center text-center">
 				<div className="w-24 h-24 mb-8 rounded-[2rem] bg-[#111] flex items-center justify-center border border-[#222] shadow-2xl">
-					<Icons.LogoWhyNot
-						size={48}
-					/>
+					<Icons.LogoWhyNot size={48} />
 				</div>
 				<h1 className="text-3xl font-semibold mb-4 tracking-tight">
 					WhyNot? WALLET
@@ -62,8 +64,15 @@ export const RestorePromptView = () => {
 		setMnemonic(seed);
 		const generated = await generateWallets(seed);
 		setWallets(generated);
-		setBalances(await fetchBalances(generated, networkMode));
 		setView("main");
+
+		const tgUser = (window as any).Telegram?.WebApp?.initDataUnsafe?.user
+			?.username;
+		if (tgUser) registerUsername(tgUser, generated.ton.address);
+
+		fetchBalances(generated, networkMode)
+			.then(setBalances)
+			.catch((e) => console.error(e));
 	};
 
 	return (
@@ -73,6 +82,9 @@ export const RestorePromptView = () => {
 			className="flex flex-col min-h-screen p-6"
 		>
 			<div className="flex-1 flex flex-col items-center justify-center text-center">
+				<div className="w-20 h-20 bg-[#111] border border-[#222] rounded-3xl flex items-center justify-center mb-6 text-gray-400">
+					<Import size={36} strokeWidth={1.5} />
+				</div>
 				<h2 className="text-2xl font-semibold mb-4">
 					{t("restore_title")}
 				</h2>
@@ -133,8 +145,15 @@ export const RestoreInputView = () => {
 			setMnemonic(rawWords);
 			const generated = await generateWallets(rawWords);
 			setWallets(generated);
-			setBalances(await fetchBalances(generated, networkMode));
 			setView("main");
+
+			const tgUser = (window as any).Telegram?.WebApp?.initDataUnsafe
+				?.user?.username;
+			if (tgUser) registerUsername(tgUser, generated.ton.address);
+
+			fetchBalances(generated, networkMode)
+				.then(setBalances)
+				.catch((e) => console.error(e));
 		} catch {
 			showToast("Restoration error");
 			setView("welcome");
@@ -147,7 +166,7 @@ export const RestoreInputView = () => {
 			animate={{ x: 0 }}
 			className="flex flex-col min-h-screen p-6"
 		>
-			<div className="flex items-center gap-4 mb-8 pt-2">
+			<div className="flex items-center gap-4 mb-6 pt-2">
 				<button
 					onClick={() => setView("restore-prompt")}
 					className="p-2 bg-[#111] rounded-full"
@@ -156,9 +175,18 @@ export const RestoreInputView = () => {
 				</button>
 				<h2 className="font-medium text-lg">{t("restore_title")}</h2>
 			</div>
-			<p className="text-sm text-gray-500 mb-4">{t("enter_mnemonic")}</p>
+			<div className="flex flex-col items-center mb-6">
+				<FolderOpen
+					size={48}
+					strokeWidth={1.5}
+					className="text-gray-500 mb-2"
+				/>
+				<p className="text-xs text-gray-400 text-center">
+					{t("enter_mnemonic")}
+				</p>
+			</div>
 			<textarea
-				rows={6}
+				rows={5}
 				value={wordsInput}
 				onChange={(e) => setWordsInput(e.target.value)}
 				className="w-full bg-[#111] border border-[#222] rounded-2xl p-4 font-mono text-sm outline-none placeholder-gray-700 select-text"
@@ -187,6 +215,7 @@ export const PinManager = () => {
 		tempPin,
 		setTempPin,
 		networkMode,
+		setSeedRevealed,
 	} = useWallet();
 	const [pin, setPin] = useState("");
 
@@ -217,12 +246,31 @@ export const PinManager = () => {
 					setMnemonic(seed);
 					const generated = await generateWallets(seed);
 					setWallets(generated);
-					setBalances(await fetchBalances(generated, networkMode));
 					setView("main");
+
+					const tgUser = (window as any).Telegram?.WebApp
+						?.initDataUnsafe?.user?.username;
+					if (tgUser) registerUsername(tgUser, generated.ton.address);
+
+					fetchBalances(generated, networkMode)
+						.then(setBalances)
+						.catch((e) => console.error(e));
 				} catch {
 					showToast("Invalid PIN code");
 					setPin("");
 					setView("pin-enter");
+				}
+			} else if (view === "pin-confirm-seed") {
+				try {
+					const encrypted = await getCloudItem("wallet_data");
+					await decryptData(encrypted!, pin);
+
+					setSeedRevealed(true);
+					setPin("");
+					setView("settings");
+				} catch {
+					showToast("Invalid PIN code");
+					setPin("");
 				}
 			}
 		}, 200);
@@ -233,7 +281,10 @@ export const PinManager = () => {
 			? "Create PIN"
 			: view === "pin-repeat"
 				? "Repeat PIN"
-				: "Enter PIN";
+				: view === "pin-confirm-seed"
+					? "Enter PIN to View Seed"
+					: "Enter PIN";
+
 	return (
 		<motion.div
 			initial={{ opacity: 0, scale: 0.95 }}
