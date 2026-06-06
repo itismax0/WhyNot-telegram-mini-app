@@ -761,6 +761,7 @@ export const SendView = () => {
 	const {
 		setView,
 		wallets,
+		balances,
 		setBalances,
 		showToast,
 		networkMode,
@@ -885,6 +886,7 @@ export const SendView = () => {
 	const assetDetails = getAssetDetails(asset.id);
 	const conversionRate = rates[asset.id] || 0;
 	const usdEquivalent = Number(amount) * conversionRate;
+	const assetBalance = balances[asset.id] || 0;
 
 	const firstLetter = address
 		? address.replace("@", "").trim().charAt(0).toUpperCase()
@@ -1274,10 +1276,12 @@ export const SendView = () => {
 							disabled={
 								loading ||
 								!amount ||
+								Number(amount) <= 0 ||
 								!address ||
-								!!addressError
+								!!addressError ||
+								Number(amount) > assetBalance
 							}
-							className="w-full py-4 bg-[#007aff] hover:bg-[#006ee6] active:bg-[#005ec4] text-white text-[16px] font-semibold rounded-[16px] transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-500/5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+							className="w-full py-4 bg-[#007aff] hover:bg-[#006ee6] active:bg-[#005ec4] text-white text-[16px] font-semibold rounded-[16px] transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-500/5 cursor-pointer disabled:bg-[#3a3a3c] disabled:opacity-60 disabled:cursor-not-allowed disabled:shadow-none"
 						>
 							<Send
 								size={16}
