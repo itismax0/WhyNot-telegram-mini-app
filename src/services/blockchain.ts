@@ -198,12 +198,12 @@ export async function sendTransaction(
 			messages: [
 				internal({ to, value: toNano(amount.toString()), bounce: false }),
 			],
-			sendMode: SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS,
+			sendMode: SendMode.PAY_GAS_SEPARATELY,
 		});
 
-		await new Promise((r) => setTimeout(r, 1200));
+		await new Promise((r) => setTimeout(r, 1500));
 
-		const boc = transfer.toBoc().toString("base64");
+		const boc = transfer.toBoc(true).toString("base64");
 		let sendRes: any = null;
 		for (let attempt = 0; attempt < 3; attempt++) {
 			if (attempt > 0) await new Promise((r) => setTimeout(r, 2000));
