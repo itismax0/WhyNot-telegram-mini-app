@@ -1,3 +1,4 @@
+import { toNano } from "@ton/core";
 import { mnemonicToPrivateKey, sha256 } from "@ton/crypto";
 import { WalletContractV4, TonClient, internal, SendMode, Address } from "@ton/ton";
 import { ethers } from "ethers";
@@ -74,7 +75,7 @@ function getProviders(mode: "mainnet" | "testnet" | "devnet") {
 	if (mode === "mainnet") {
 		return {
 			ton: new TonClient({
-				endpoint: "https://ton-mainnet.rpc.orbs.network/jsonRPC",
+				endpoint: "https://toncenter.com/api/v2/jsonRPC",
 			}),
 			eth: new ethers.JsonRpcProvider("https://cloudflare-eth.com"),
 			sol: new Connection(
@@ -85,7 +86,7 @@ function getProviders(mode: "mainnet" | "testnet" | "devnet") {
 	} else if (mode === "testnet") {
 		return {
 			ton: new TonClient({
-				endpoint: "https://ton-testnet.rpc.orbs.network/jsonRPC",
+				endpoint: "https://testnet.toncenter.com/api/v2/jsonRPC",
 			}),
 			eth: new ethers.JsonRpcProvider(
 				"https://ethereum-sepolia-rpc.publicnode.com"
@@ -95,7 +96,7 @@ function getProviders(mode: "mainnet" | "testnet" | "devnet") {
 	} else {
 		return {
 			ton: new TonClient({
-				endpoint: "https://ton-testnet.rpc.orbs.network/jsonRPC",
+				endpoint: "https://testnet.toncenter.com/api/v2/jsonRPC",
 			}),
 			eth: new ethers.JsonRpcProvider(
 				"https://ethereum-sepolia-rpc.publicnode.com"
@@ -185,7 +186,7 @@ export async function sendTransaction(
 			seqno,
 			secretKey: wallets.ton.keyPair.secretKey,
 			messages: [
-				internal({ to, value: amount.toString(), bounce: false }),
+				internal({ to, value: toNano(amount.toString()), bounce: false }),
 			],
 			sendMode: SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS,
 		});
