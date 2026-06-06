@@ -207,9 +207,13 @@ export async function sendTransaction(
 		let sendRes: any = null;
 		for (let attempt = 0; attempt < 3; attempt++) {
 			if (attempt > 0) await new Promise((r) => setTimeout(r, 2000));
-			sendRes = await fetch(
-				`${tonBase}/sendBoc?boc=${encodeURIComponent(boc)}`
-			).then((r) => r.json());
+			const resp = await fetch(`${tonBase}/sendBoc`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ boc }),
+			});
+			if (resp.status === 429) continue;
+			sendRes = await resp.json().catch(() => null);
 			if (sendRes?.ok) break;
 		}
 
