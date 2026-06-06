@@ -135,10 +135,21 @@ export async function fetchBalances(
 ): Promise<Record<string, number>> {
 	const providers = getProviders(mode);
 	try {
-		const [tonNano, ethWei, solLamports] = await Promise.all([
-			providers.ton
-				.getBalance(wallets.ton.contract.address)
-				.catch(() => 0n),
+		const tonEndpoint =
+			mode === "mainnet"
+				? "https://toncenter.com/api/v2/getAddressInformation"
+				: "https://testnet.toncenter.com/api/v2/getAddressInformation";
+
+		const [tonBalance, ethWei, solLamports] = await Promise.all([
+			fetch(`${tonEndpoint}?address=${wallets.ton.address}`)
+				.then((r) => r.json())
+				.then(
+					(data) =>
+						data.ok && data.result
+							? Number(data.result.balance) / 1e9
+							: 0
+				)
+				.catch(() => 0),
 			providers.eth.getBalance(wallets.eth.address).catch(() => 0n),
 			providers.sol
 				.getBalance(wallets.sol.keypair.publicKey)
@@ -146,7 +157,7 @@ export async function fetchBalances(
 		]);
 
 		return {
-			ton: Number(tonNano) / 1e9,
+			ton: tonBalance,
 			eth: Number(ethers.formatEther(ethWei)),
 			sol: solLamports / LAMPORTS_PER_SOL,
 			usdt: 0,
@@ -445,8 +456,13 @@ export async function evaluateReputationReal(
 				balance = Number(state.balance) / 1e9;
 			}
 
+			const tcBase =
+				mode === "mainnet"
+					? "https://toncenter.com/api/v2"
+					: "https://testnet.toncenter.com/api/v2";
+
 			const tcRes = await fetch(
-				`https://toncenter.com/api/v2/getAddressInformation?address=${targetAddress}`
+				`${tcBase}/getAddressInformation?address=${targetAddress}`
 			).then(r => r.json()).catch(() => null);
 			if (tcRes?.ok && tcRes.result) {
 				balance = Number(tcRes.result.balance) / 1e9;
@@ -454,7 +470,7 @@ export async function evaluateReputationReal(
 			}
 
 			const tcTxRes = await fetch(
-				`https://toncenter.com/api/v2/getTransactions?address=${targetAddress}&limit=100`
+				`${tcBase}/getTransactions?address=${targetAddress}&limit=100`
 			).then(r => r.json()).catch(() => null);
 			if (tcTxRes?.ok && Array.isArray(tcTxRes.result) && tcTxRes.result.length > 0) {
 				txCount = tcTxRes.result.length;

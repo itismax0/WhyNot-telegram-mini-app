@@ -137,8 +137,21 @@ const Combobox = ({
 };
 
 export const MainView = () => {
-	const { setView, balances, rates, t, setSelectedAsset } = useWallet();
+	const {
+		setView,
+		wallets,
+		balances,
+		setBalances,
+		rates,
+		t,
+		setSelectedAsset,
+		networkMode,
+	} = useWallet();
 	const [hide, setHide] = useState(false);
+
+	useEffect(() => {
+		fetchBalances(wallets, networkMode).then(setBalances);
+	}, []);
 
 	const totalUsd = ASSETS.reduce(
 		(acc, a) => acc + (balances[a.id] || 0) * (rates[a.id] || 0),
