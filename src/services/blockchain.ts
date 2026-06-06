@@ -207,18 +207,23 @@ export async function sendTransaction(
 		let sendRes: any = null;
 		for (let attempt = 0; attempt < 3; attempt++) {
 			if (attempt > 0) await new Promise((r) => setTimeout(r, 2000));
-			const resp = await fetch(`${tonBase}/sendBoc`, {
+			const resp = await fetch(`${tonBase}/jsonRPC`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ boc }),
+				body: JSON.stringify({
+					jsonrpc: "2.0",
+					id: 1,
+					method: "sendBoc",
+					params: { boc },
+				}),
 			});
 			if (resp.status === 429) continue;
 			sendRes = await resp.json().catch(() => null);
-			if (sendRes?.ok) break;
+			if (sendRes?.result !== undefined) break;
 		}
 
-		if (!sendRes?.ok) {
-			throw new Error(sendRes?.error || "Network error");
+		if (!sendRes?.result) {
+			throw new Error(sendRes?.error?.message || sendRes?.error || "Network error");
 		}
 	} else if (assetId === "eth") {
 		const activeWallet = wallets.eth.wallet.connect(providers.eth);
