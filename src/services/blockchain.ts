@@ -201,10 +201,17 @@ export async function sendTransaction(
 			sendMode: SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS,
 		});
 
+		await new Promise((r) => setTimeout(r, 1200));
+
 		const boc = transfer.toBoc().toString("base64");
-		const sendRes = await fetch(
-			`${tonBase}/sendBoc?boc=${encodeURIComponent(boc)}`
-		).then((r) => r.json());
+		let sendRes: any = null;
+		for (let attempt = 0; attempt < 3; attempt++) {
+			if (attempt > 0) await new Promise((r) => setTimeout(r, 2000));
+			sendRes = await fetch(
+				`${tonBase}/sendBoc?boc=${encodeURIComponent(boc)}`
+			).then((r) => r.json());
+			if (sendRes?.ok) break;
+		}
 
 		if (!sendRes?.ok) {
 			throw new Error(sendRes?.error || "Network error");
