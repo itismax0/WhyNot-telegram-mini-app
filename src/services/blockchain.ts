@@ -1,4 +1,3 @@
-import { toNano } from "@ton/core";
 import { mnemonicToPrivateKey, sha256 } from "@ton/crypto";
 import { WalletContractV4, TonClient, internal, SendMode, Address } from "@ton/ton";
 import { ethers } from "ethers";
@@ -180,51 +179,16 @@ export async function sendTransaction(
 	const providers = getProviders(mode);
 
 	if (assetId === "ton") {
-		const tonBase =
-			mode === "mainnet"
-				? "https://toncenter.com/api/v2"
-				: "https://testnet.toncenter.com/api/v2";
-
-		const seqnoRes = await fetch(
-			`${tonBase}/runGetMethod?address=${wallets.ton.address}&method=seqno&stack=[]`
-		).then((r) => r.json()).catch(() => null);
-		const seqno = seqnoRes?.ok && seqnoRes?.result?.stack?.[0]?.[1]
-			? Number(seqnoRes.result.stack[0][1])
-			: 0;
-
-		const transfer = wallets.ton.contract.createTransfer({
+		const contract = providers.ton.open(wallets.ton.contract);
+		let seqno = await contract.getSeqno().catch(() => 0);
+		await contract.sendTransfer({
 			seqno,
 			secretKey: wallets.ton.keyPair.secretKey,
 			messages: [
-				internal({ to, value: toNano(amount.toString()), bounce: false }),
+				internal({ to, value: amount.toString(), bounce: false }),
 			],
-			sendMode: SendMode.PAY_GAS_SEPARATELY,
+			sendMode: SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS,
 		});
-
-		await new Promise((r) => setTimeout(r, 1500));
-
-		const boc = transfer.toBoc(true).toString("base64");
-		let sendRes: any = null;
-		for (let attempt = 0; attempt < 3; attempt++) {
-			if (attempt > 0) await new Promise((r) => setTimeout(r, 2000));
-			const resp = await fetch(`${tonBase}/jsonRPC`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					jsonrpc: "2.0",
-					id: 1,
-					method: "sendBoc",
-					params: { boc },
-				}),
-			});
-			if (resp.status === 429) continue;
-			sendRes = await resp.json().catch(() => null);
-			if (sendRes?.result !== undefined) break;
-		}
-
-		if (!sendRes?.result) {
-			throw new Error(sendRes?.error?.message || sendRes?.error || "Network error");
-		}
 	} else if (assetId === "eth") {
 		const activeWallet = wallets.eth.wallet.connect(providers.eth);
 		const tx = await activeWallet.sendTransaction({
