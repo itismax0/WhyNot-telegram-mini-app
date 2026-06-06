@@ -180,9 +180,19 @@ export async function sendTransaction(
 	const providers = getProviders(mode);
 
 	if (assetId === "ton") {
-		const contract = providers.ton.open(wallets.ton.contract);
-		let seqno = await contract.getSeqno().catch(() => 0);
-		await contract.sendTransfer({
+		const tonBase =
+			mode === "mainnet"
+				? "https://toncenter.com/api/v2"
+				: "https://testnet.toncenter.com/api/v2";
+
+		const seqnoRes = await fetch(
+			`${tonBase}/runGetMethod?address=${wallets.ton.address}&method=seqno&stack=[]`
+		).then((r) => r.json()).catch(() => null);
+		const seqno = seqnoRes?.ok && seqnoRes?.result?.stack?.[0]?.[1]
+			? Number(seqnoRes.result.stack[0][1])
+			: 0;
+
+		const transfer = wallets.ton.contract.createTransfer({
 			seqno,
 			secretKey: wallets.ton.keyPair.secretKey,
 			messages: [
@@ -190,6 +200,15 @@ export async function sendTransaction(
 			],
 			sendMode: SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS,
 		});
+
+		const boc = transfer.toBoc().toString("base64");
+		const sendRes = await fetch(
+			`${tonBase}/sendBoc?boc=${encodeURIComponent(boc)}`
+		).then((r) => r.json());
+
+		if (!sendRes?.ok) {
+			throw new Error(sendRes?.error || "Network error");
+		}
 	} else if (assetId === "eth") {
 		const activeWallet = wallets.eth.wallet.connect(providers.eth);
 		const tx = await activeWallet.sendTransaction({
