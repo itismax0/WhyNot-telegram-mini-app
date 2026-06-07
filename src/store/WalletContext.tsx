@@ -12,9 +12,12 @@ type ViewState =
 	| "main"
 	| "receive"
 	| "send"
+	| "swap"
 	| "history"
 	| "settings"
-	| "token_detail";
+	| "more"
+	| "token_detail"
+	| "ai";
 type NetworkMode = "mainnet" | "testnet" | "devnet";
 type Language = "en" | "ru";
 
@@ -207,6 +210,8 @@ interface WalletContextType {
 	setBalances: (b: Record<string, number>) => void;
 	rates: Record<string, number>;
 	setRates: (r: Record<string, number>) => void;
+	changes: Record<string, number>;
+	setChanges: (c: Record<string, number>) => void;
 	mnemonic: string[];
 	setMnemonic: (m: string[]) => void;
 	toast: string | null;
@@ -222,6 +227,8 @@ interface WalletContextType {
 	setSeedRevealed: (v: boolean) => void;
 	selectedAsset: any;
 	setSelectedAsset: (a: any) => void;
+	openrouterKey: string | null;
+	setOpenrouterKey: (k: string | null) => void;
 }
 
 const WalletContext = createContext<WalletContextType>({} as WalletContextType);
@@ -231,6 +238,7 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 	const [wallets, setWallets] = useState<any>(null);
 	const [balances, setBalances] = useState<Record<string, number>>({});
 	const [rates, setRates] = useState<Record<string, number>>({});
+	const [changes, setChanges] = useState<Record<string, number>>({});
 	const [mnemonic, setMnemonic] = useState<string[]>([]);
 	const [toast, setToast] = useState<string | null>(null);
 	const [networkMode, setNetworkModeState] = useState<NetworkMode>("mainnet");
@@ -238,12 +246,15 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 	const [tempPin, setTempPin] = useState<string>("");
 	const [seedRevealed, setSeedRevealed] = useState<boolean>(false);
 	const [selectedAsset, setSelectedAsset] = useState<any>(null);
+	const [openrouterKey, setOpenrouterKeyState] = useState<string | null>(null);
 
 	useEffect(() => {
 		const savedLang = localStorage.getItem("wallet_lang") as Language;
 		if (savedLang) setLanguageState(savedLang);
 		const savedNet = localStorage.getItem("wallet_net") as NetworkMode;
 		if (savedNet) setNetworkModeState(savedNet);
+		const savedKey = localStorage.getItem("whynot_openrouter_key");
+		if (savedKey) setOpenrouterKeyState(savedKey);
 	}, []);
 
 	const setLanguage = (l: Language) => {
@@ -254,6 +265,16 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 	const setNetworkMode = (m: NetworkMode) => {
 		setNetworkModeState(m);
 		localStorage.setItem("wallet_net", m);
+	};
+
+	const setOpenrouterKey = (k: string | null) => {
+		if (k && k.trim()) {
+			setOpenrouterKeyState(k.trim());
+			localStorage.setItem("whynot_openrouter_key", k.trim());
+		} else {
+			setOpenrouterKeyState(null);
+			localStorage.removeItem("whynot_openrouter_key");
+		}
 	};
 
 	const showToast = (msg: string) => {
@@ -276,6 +297,8 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 				setBalances,
 				rates,
 				setRates,
+				changes,
+				setChanges,
 				mnemonic,
 				setMnemonic,
 				toast,
@@ -291,6 +314,8 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 				setSeedRevealed,
 				selectedAsset,
 				setSelectedAsset,
+				openrouterKey,
+				setOpenrouterKey,
 			}}
 		>
 			{children}

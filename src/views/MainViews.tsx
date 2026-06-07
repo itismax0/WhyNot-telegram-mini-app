@@ -3,19 +3,23 @@ import { motion, AnimatePresence } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
 import {
 	ArrowDownToLine,
+	ArrowUpDown,
 	ArrowUpRight,
 	Eye,
 	EyeOff,
 	ChevronLeft,
+	ChevronRight,
 	ChevronDown,
 	Copy,
 	Settings,
 	Clock,
+	Grid2X2,
 	Sparkles,
 	ShieldCheck,
 	Lock,
 	Send,
 	Wallet,
+	Bot,
 } from "lucide-react";
 import { useWallet } from "../store/WalletContext";
 
@@ -146,6 +150,7 @@ export const MainView = () => {
 		t,
 		setSelectedAsset,
 		networkMode,
+		language,
 	} = useWallet();
 	const [hide, setHide] = useState(false);
 
@@ -162,7 +167,7 @@ export const MainView = () => {
 		<motion.div
 			initial={{ opacity: 0 }}
 			animate={{ opacity: 1 }}
-			className="flex flex-col min-h-screen p-5 pb-10"
+			className="flex flex-col min-h-screen p-5 pb-32"
 		>
 			<div className="flex justify-between items-center mt-4 mb-6">
 				<div className="w-6 h-6" />
@@ -272,6 +277,33 @@ export const MainView = () => {
 						);
 					})}
 				</div>
+
+				<button
+					onClick={() => setView("ai")}
+					className="mt-4 w-full flex items-center gap-3 p-4 bg-gradient-to-r from-[#0c1e3a] to-[#0a1530] border border-[#1a2f5c]/60 hover:border-[#387aff]/40 active:scale-[0.98] rounded-2xl transition-all text-left"
+				>
+					<div className="relative w-11 h-11 flex-shrink-0">
+						<div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-[#387aff] to-[#5d3aff] flex items-center justify-center shadow-lg shadow-blue-500/30">
+							<Bot size={22} className="text-white" strokeWidth={2.2} />
+						</div>
+						<Sparkles
+							size={12}
+							className="absolute -top-1 -right-1 text-yellow-400"
+							strokeWidth={2.5}
+						/>
+					</div>
+					<div className="flex-1 min-w-0">
+						<h4 className="font-semibold text-[15px] text-white mb-0.5">
+							{language === "ru" ? "AI-ассистент WhyNot" : "AI assistent WhyNot"}
+						</h4>
+						<p className="text-[12px] text-[#8e8e93] leading-snug">
+							{language === "ru"
+								? "Анализирует рынок, находит возможности и защищает ваши средства."
+								: "Analyzes the market, finds opportunities, and protects your funds."}
+						</p>
+					</div>
+					<ChevronRight size={18} className="text-[#6e6e73] flex-shrink-0" />
+				</button>
 			</div>
 		</motion.div>
 	);
@@ -790,6 +822,8 @@ export const SendView = () => {
 	const [repResult, setRepResult] = useState<ReputationDetails | null>(null);
 	const [showDetails, setShowDetails] = useState(false);
 	const [showAssetDropdown, setShowAssetDropdown] = useState(false);
+	const [showReceiveAssetDropdown, setShowReceiveAssetDropdown] = useState(false);
+	const [receiveAsset, setReceiveAsset] = useState(ASSETS[3]);
 	const [addressError, setAddressError] = useState<string | null>(null);
 	const [stage, setStage] = useState<"form" | "confirm" | "success">("form");
 	const latestCleanRef = useRef("");
@@ -900,6 +934,18 @@ export const SendView = () => {
 	const conversionRate = rates[asset.id] || 0;
 	const usdEquivalent = Number(amount) * conversionRate;
 	const assetBalance = balances[asset.id] || 0;
+	const receiveRate = rates[receiveAsset.id] || 0;
+	const receiveAmount =
+		receiveRate > 0 ? usdEquivalent / receiveRate : 0;
+	const receiveBalance = balances[receiveAsset.id] || 0;
+	const exchangeRate =
+		receiveRate > 0 ? conversionRate / receiveRate : 0;
+	const swapAssets = () => {
+		setAsset(receiveAsset);
+		setReceiveAsset(asset);
+		setShowAssetDropdown(false);
+		setShowReceiveAssetDropdown(false);
+	};
 
 	const firstLetter = address
 		? address.replace("@", "").trim().charAt(0).toUpperCase()
@@ -1418,6 +1464,92 @@ export const HistoryView = () => {
 					))}
 				</div>
 			)}
+		</motion.div>
+	);
+};
+
+export const MoreView = () => {
+	const { setView, language } = useWallet();
+	const items = [
+		{
+			id: "receive",
+			title: language === "ru" ? "Пополнить" : "Receive",
+			description:
+				language === "ru"
+					? "Адреса и QR-код кошелька"
+					: "Wallet addresses and QR code",
+			icon: ArrowDownToLine,
+		},
+		{
+			id: "history",
+			title: language === "ru" ? "История" : "History",
+			description:
+				language === "ru"
+					? "Операции из блокчейн-реестра"
+					: "Transactions from the blockchain ledger",
+			icon: Clock,
+		},
+		{
+			id: "main",
+			title: language === "ru" ? "Активы" : "Assets",
+			description:
+				language === "ru"
+					? "Баланс и список монет"
+					: "Balance and token list",
+			icon: Wallet,
+		},
+		{
+			id: "settings",
+			title: language === "ru" ? "Настройки" : "Settings",
+			description:
+				language === "ru"
+					? "Сеть, язык и seed-фраза"
+					: "Network, language and seed phrase",
+			icon: Settings,
+		},
+	] as const;
+
+	return (
+		<motion.div
+			initial={{ opacity: 0 }}
+			animate={{ opacity: 1 }}
+			transition={{ type: "spring", damping: 25, stiffness: 200 }}
+			className="flex flex-col min-h-screen p-5 pb-32"
+		>
+			<div className="flex justify-between items-center mt-4 mb-8">
+				<div>
+					<p className="text-[11px] text-gray-500 font-mono uppercase tracking-wider mb-2">
+						WhyNot?
+					</p>
+					<h2 className="font-medium text-2xl leading-tight">
+						{language === "ru" ? "Еще" : "More"}
+					</h2>
+				</div>
+				<div className="w-12 h-12 bg-[#111] border border-[#222] rounded-2xl flex items-center justify-center text-[#2f7dff]">
+					<Grid2X2 size={24} strokeWidth={2.8} />
+				</div>
+			</div>
+
+			<div className="grid grid-cols-2 gap-3">
+				{items.map(({ id, title, description, icon: Icon }) => (
+					<button
+						key={id}
+						type="button"
+						onClick={() => setView(id)}
+						className="min-h-[142px] rounded-2xl border border-[#1a1a1a] bg-[#0a0a0a] p-4 text-left transition-all active:scale-[0.98] hover:bg-[#111]"
+					>
+						<div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl bg-[#151515] text-white border border-[#242424]">
+							<Icon size={21} />
+						</div>
+						<h3 className="mb-1 text-sm font-semibold text-white">
+							{title}
+						</h3>
+						<p className="text-xs leading-snug text-gray-500">
+							{description}
+						</p>
+					</button>
+				))}
+			</div>
 		</motion.div>
 	);
 };

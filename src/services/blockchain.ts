@@ -1,5 +1,5 @@
 import { mnemonicToPrivateKey, sha256 } from "@ton/crypto";
-import { WalletContractV4, TonClient, internal, SendMode, Address } from "@ton/ton";
+import { WalletContractV4, TonClient, internal, SendMode, Address, Cell } from "@ton/ton";
 import { ethers } from "ethers";
 import {
 	Connection,
@@ -35,6 +35,11 @@ export const ASSETS = [
 		network: "TON",
 		cmc_id: "the-open-network",
 		icon: "https://avatars.githubusercontent.com/u/55018343?s=200&v=4",
+		address: "EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c",
+		decimals: 9,
+		swappable: true,
+		chainId: 85918,
+		symbiosisAddress: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
 	},
 	{
 		id: "eth",
@@ -43,6 +48,10 @@ export const ASSETS = [
 		network: "EVM",
 		cmc_id: "ethereum",
 		icon: "https://assets.coingecko.com/coins/images/279/large/ethereum.png",
+		decimals: 18,
+		swappable: false,
+		chainId: 1,
+		symbiosisAddress: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
 	},
 	{
 		id: "sol",
@@ -51,6 +60,10 @@ export const ASSETS = [
 		network: "Solana",
 		cmc_id: "solana",
 		icon: "https://assets.coingecko.com/coins/images/4128/large/solana.png",
+		decimals: 9,
+		swappable: false,
+		chainId: 5426,
+		symbiosisAddress: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
 	},
 	{
 		id: "usdt",
@@ -59,6 +72,11 @@ export const ASSETS = [
 		network: "TON",
 		cmc_id: "tether",
 		icon: "https://assets.coingecko.com/coins/images/325/large/Tether.png",
+		address: "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs",
+		decimals: 6,
+		swappable: true,
+		chainId: 85918,
+		symbiosisAddress: "0x9328Eb759596C38a25f59028B146Fecdc3621Dfe",
 	},
 	{
 		id: "btc",
@@ -67,6 +85,10 @@ export const ASSETS = [
 		network: "Bitcoin",
 		cmc_id: "bitcoin",
 		icon: "https://assets.coingecko.com/coins/images/1/large/bitcoin.png",
+		decimals: 8,
+		swappable: false,
+		chainId: 3652501241,
+		symbiosisAddress: "0x1dfc1e32d75b3f4cb2f2b1bcecad984e99eeba05",
 	},
 ];
 
@@ -210,6 +232,162 @@ export async function sendTransaction(
 	} else {
 		throw new Error("Asset sending not supported in this version");
 	}
+}
+
+export interface OmnistonTransferMessage {
+	target_address: string;
+	send_amount: string;
+	payload: string;
+}
+
+export interface SymbiosisTransaction {
+	to: string;
+	data: string;
+	value: string;
+	chainId: number;
+	approveTo?: string;
+	approveData?: string;
+	approveValue?: string;
+	fromTokenAddress: string;
+}
+
+export async function executeSymbiosisSwap(
+	wallets: any,
+	symbTx: SymbiosisTransaction,
+	sourceChain: "eth" | "ton" | "sol" | "btc",
+	mode: "mainnet" | "testnet" | "devnet"
+): Promise<{ txHash: string; explorerUrl: string }> {
+	const providers = getProviders(mode);
+
+	if (sourceChain === "eth") {
+		const activeWallet = wallets.eth.wallet.connect(providers.eth);
+
+		if (symbTx.approveTo && symbTx.approveData) {
+			const approveTx = await activeWallet.sendTransaction({
+				to: symbTx.approveTo,
+				data: symbTx.approveData,
+				value: symbTx.approveValue ?? "0x0",
+			});
+			await approveTx.wait();
+		}
+
+		const tx = await activeWallet.sendTransaction({
+			to: symbTx.to,
+			data: symbTx.data,
+			value: symbTx.value,
+		});
+		const receipt = await tx.wait();
+		const hash = receipt?.hash ?? tx.hash;
+		return {
+			txHash: hash,
+			explorerUrl: `https://etherscan.io/tx/${hash}`,
+		};
+	}
+
+	if (sourceChain === "ton") {
+		const contract = providers.ton.open(wallets.ton.contract);
+		const seqno = await contract.getSeqno().catch(() => 0);
+		const transfer = contract.createTransfer({
+			seqno,
+			secretKey: wallets.ton.keyPair.secretKey,
+			messages: [
+				internal({
+					to: Address.parse(symbTx.to),
+					value: BigInt(symbTx.value || "0"),
+					bounce: true,
+					body: Cell.fromBoc(Buffer.from(symbTx.data, "base64"))[0],
+				}),
+			],
+			sendMode: SendMode.PAY_GAS_SEPARATELY,
+		});
+		const txHash = transfer.message.hash().toString("hex");
+		const boc = transfer.message.toBoc(false);
+		const bocBase64 = Buffer.from(boc).toString("base64");
+		const endpoint =
+			mode === "mainnet"
+				? "https://toncenter.com/api/v2/sendBoc"
+				: "https://testnet.toncenter.com/api/v2/sendBoc";
+		const res = await fetch(endpoint, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ boc: bocBase64 }),
+		});
+		if (!res.ok) {
+			throw new Error(`Toncenter sendBoc failed: ${res.status}`);
+		}
+		const data = await res.json().catch(() => ({}));
+		if (data && data.ok === false) {
+			throw new Error(
+				`Toncenter rejected: ${data.error || "unknown error"}`
+			);
+		}
+		return {
+			txHash,
+			explorerUrl: `https://tonviewer.com/transaction/${txHash}`,
+		};
+	}
+
+	throw new Error(
+		`Symbiosis execution not implemented for source chain: ${sourceChain}`
+	);
+}
+
+export async function executeSwap(
+	wallets: any,
+	messages: OmnistonTransferMessage[],
+	mode: "mainnet" | "testnet" | "devnet"
+): Promise<{ txHash: string }> {
+	const providers = getProviders(mode);
+	const contract = providers.ton.open(wallets.ton.contract);
+
+	const seqno = await contract.getSeqno().catch(() => 0);
+
+	const internalMessages = messages.map((m) => {
+		const body = m.payload
+			? Cell.fromBoc(Buffer.from(m.payload, "base64"))[0]
+			: undefined;
+		return internal({
+			to: Address.parse(m.target_address),
+			value: BigInt(m.send_amount),
+			bounce: true,
+			body,
+		});
+	});
+
+	const transfer = contract.createTransfer({
+		seqno,
+		secretKey: wallets.ton.keyPair.secretKey,
+		messages: internalMessages,
+		sendMode: SendMode.PAY_GAS_SEPARATELY,
+	});
+
+	const txHash = transfer.message.hash().toString("hex");
+	const boc = transfer.message.toBoc(false);
+	const bocBase64 = Buffer.from(boc).toString("base64");
+
+	const endpoint =
+		mode === "mainnet"
+			? "https://toncenter.com/api/v2/sendBoc"
+			: "https://testnet.toncenter.com/api/v2/sendBoc";
+
+	const res = await fetch(endpoint, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ boc: bocBase64 }),
+	});
+
+	if (!res.ok) {
+		throw new Error(`Toncenter sendBoc failed: ${res.status}`);
+	}
+
+	const data = await res.json().catch(() => ({}));
+	if (data && data.ok === false) {
+		throw new Error(
+			`Toncenter rejected the transaction: ${data.error || "unknown error"}`
+		);
+	}
+
+	return { txHash };
 }
 
 export interface WalletTransaction {
