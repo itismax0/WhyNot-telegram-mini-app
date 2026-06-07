@@ -17,7 +17,7 @@ import {
 	Zap,
 } from "lucide-react";
 import { useWallet, removeCloudItem } from "../store/WalletContext";
-import { aiChat } from "../services/aiAssistant";
+import { aiChat, detectKeyProvider } from "../services/aiAssistant";
 
 export const SettingsView = () => {
 	const {
@@ -33,13 +33,15 @@ export const SettingsView = () => {
 		setSeedRevealed,
 		groqKey,
 		setGroqKey,
+		openrouterKey,
+		setOpenrouterKey,
 	} = useWallet();
 
-	const [keyDraft, setKeyDraft] = useState(groqKey || "");
+	const [keyDraft, setKeyDraft] = useState("");
 	const [showKey, setShowKey] = useState(false);
 	const [testing, setTesting] = useState(false);
 	const [testResult, setTestResult] = useState<
-		null | { ok: boolean; msg: string }
+		null | { ok: boolean; msg: string; provider?: string }
 	>(null);
 
 	const handleLangChange = () => {
@@ -75,51 +77,110 @@ export const SettingsView = () => {
 	const handleSaveKey = () => {
 		const v = keyDraft.trim();
 		if (!v) {
-			setGroqKey(null);
-			showToast("AI key cleared");
-			setTestResult(null);
+			showToast("Enter a key or use Clear");
 			return;
 		}
-		if (!v.startsWith("sk-")) {
-			showToast("Key should start with sk-…");
+		const provider = detectKeyProvider(v);
+		if (!provider) {
+			showToast("Key should start with gsk_… (Groq) or sk-… (OpenRouter)");
 			return;
 		}
-		setGroqKey(v);
-		showToast("AI key saved");
+		if (provider === "groq") {
+			setGroqKey(v);
+			showToast("Groq key saved (primary)");
+		} else {
+			setOpenrouterKey(v);
+			showToast("OpenRouter key saved (fallback)");
+		}
+		setKeyDraft("");
 		setTestResult(null);
 	};
 
-	const handleClearKey = () => {
-		setKeyDraft("");
+	const handleClearGroq = () => {
 		setGroqKey(null);
 		setTestResult(null);
-		showToast("AI key cleared");
+		showToast("Groq key cleared");
 	};
 
-	const handleTestKey = async () => {
-		const v = keyDraft.trim();
-		if (!v) {
-			setTestResult({ ok: false, msg: "Enter a key first" });
+	const handleClearOpenRouter = () => {
+		setOpenrouterKey(null);
+		setTestResult(null);
+		showToast("OpenRouter key cleared");
+	};
+
+	const handleTestPrimary = async () => {
+		const target = groqKey || keyDraft.trim();
+		if (!target) {
+			setTestResult({ ok: false, msg: "No Groq key configured" });
 			return;
 		}
 		setTesting(true);
 		setTestResult(null);
 		try {
-			await aiChat({
+			const result = await aiChat({
 				messages: [{ role: "user", content: "ping" }],
 				maxTokens: 8,
-				apiKey: v,
+				groqKey: groqKey,
+				openrouterKey: openrouterKey,
 			});
-			setTestResult({ ok: true, msg: "Connected" });
+			setTestResult({
+				ok: true,
+				msg: `Connected via ${result.provider} (${result.model})`,
+				provider: result.provider,
+			});
 		} catch (e: any) {
 			setTestResult({
 				ok: false,
-				msg: e?.message?.substring(0, 100) || "Test failed",
+				msg: e?.message?.substring(0, 120) || "Test failed",
 			});
 		} finally {
 			setTesting(false);
 		}
 	};
+
+	const handleTestDraft = async () => {
+		const v = keyDraft.trim();
+		if (!v) {
+			setTestResult({ ok: false, msg: "Enter a key first" });
+			return;
+		}
+		const provider = detectKeyProvider(v);
+		if (!provider) {
+			setTestResult({
+				ok: false,
+				msg: "Key must start with gsk_… (Groq) or sk-… (OpenRouter)",
+			});
+			return;
+		}
+		setTesting(true);
+		setTestResult(null);
+		try {
+			const result = await aiChat({
+				messages: [{ role: "user", content: "ping" }],
+				maxTokens: 8,
+				apiKey: v,
+			});
+			setTestResult({
+				ok: true,
+				msg: `Connected via ${result.provider} (${result.model})`,
+				provider: result.provider,
+			});
+		} catch (e: any) {
+			setTestResult({
+				ok: false,
+				msg: e?.message?.substring(0, 120) || "Test failed",
+			});
+		} finally {
+			setTesting(false);
+		}
+	};
+
+	const groqPreview = groqKey
+		? `${groqKey.slice(0, 6)}…${groqKey.slice(-4)}`
+		: null;
+	const orPreview = openrouterKey
+		? `${openrouterKey.slice(0, 9)}…${openrouterKey.slice(-4)}`
+		: null;
 
 	return (
 		<motion.div
@@ -177,13 +238,37 @@ export const SettingsView = () => {
 						<Sparkles size={20} className="text-[#387aff]" />
 						<span className="text-sm font-medium">AI assistant</span>
 					</div>
+
+					<div className="flex items-center gap-2 text-[10px] font-mono">
+						<span
+							className={`px-1.5 py-0.5 rounded ${
+								groqKey
+									? "bg-green-500/15 text-green-400"
+									: "bg-[#222] text-gray-500"
+							}`}
+						>
+							{groqKey ? `GROQ ✓ ${groqPreview}` : "GROQ ✗"}
+						</span>
+						<span className="text-gray-600">primary</span>
+						<span
+							className={`px-1.5 py-0.5 rounded ${
+								openrouterKey
+									? "bg-blue-500/15 text-blue-400"
+									: "bg-[#222] text-gray-500"
+							}`}
+						>
+							{openrouterKey ? `OPENROUTER ✓ ${orPreview}` : "OPENROUTER ✗"}
+						</span>
+						<span className="text-gray-600">fallback</span>
+					</div>
+
 					<div className="flex items-center gap-2">
 						<div className="flex-1 relative">
 							<input
 								type={showKey ? "text" : "password"}
 								value={keyDraft}
 								onChange={(e) => setKeyDraft(e.target.value)}
-								placeholder="sk-or-v1-…"
+								placeholder="gsk_… or sk-or-v1-…"
 								className="w-full bg-black border border-[#333] rounded-xl pl-3 pr-9 py-2.5 font-mono text-xs text-white outline-none focus:border-[#387aff]/60 transition-colors"
 								autoComplete="off"
 								spellCheck={false}
@@ -198,15 +283,17 @@ export const SettingsView = () => {
 						</div>
 						<button
 							onClick={handleSaveKey}
-							className="bg-[#387aff] hover:bg-[#2d6de0] text-white text-xs font-medium px-3 py-2.5 rounded-xl active:scale-95 transition-transform"
+							disabled={!keyDraft.trim()}
+							className="bg-[#387aff] hover:bg-[#2d6de0] disabled:opacity-50 text-white text-xs font-medium px-3 py-2.5 rounded-xl active:scale-95 transition-transform"
 						>
 							Save
 						</button>
 					</div>
-					<div className="flex items-center gap-2">
+
+					<div className="flex items-center gap-2 flex-wrap">
 						<button
-							onClick={handleTestKey}
-							disabled={testing || !keyDraft.trim()}
+							onClick={keyDraft.trim() ? handleTestDraft : handleTestPrimary}
+							disabled={testing || (!keyDraft.trim() && !groqKey)}
 							className="flex items-center gap-1.5 bg-[#222] hover:bg-[#2a2a2a] disabled:opacity-50 text-white text-xs font-medium px-3 py-2 rounded-xl active:scale-95 transition-transform"
 						>
 							{testing ? (
@@ -214,15 +301,24 @@ export const SettingsView = () => {
 							) : (
 								<Zap size={12} />
 							)}
-							Test connection
+							Test
 						</button>
 						{groqKey && (
 							<button
-								onClick={handleClearKey}
+								onClick={handleClearGroq}
 								className="flex items-center gap-1.5 bg-[#222] hover:bg-red-950/40 text-gray-400 hover:text-red-400 text-xs font-medium px-3 py-2 rounded-xl active:scale-95 transition-colors"
 							>
 								<Trash2 size={12} />
-								Clear
+								Clear Groq
+							</button>
+						)}
+						{openrouterKey && (
+							<button
+								onClick={handleClearOpenRouter}
+								className="flex items-center gap-1.5 bg-[#222] hover:bg-red-950/40 text-gray-400 hover:text-red-400 text-xs font-medium px-3 py-2 rounded-xl active:scale-95 transition-colors"
+							>
+								<Trash2 size={12} />
+								Clear OR
 							</button>
 						)}
 						<a
@@ -231,10 +327,20 @@ export const SettingsView = () => {
 							rel="noreferrer noopener"
 							className="ml-auto flex items-center gap-1 text-[10px] text-[#387aff] hover:underline"
 						>
-							Get a key
+							Groq key
+							<ExternalLink size={10} />
+						</a>
+						<a
+							href="https://openrouter.ai/keys"
+							target="_blank"
+							rel="noreferrer noopener"
+							className="flex items-center gap-1 text-[10px] text-blue-400 hover:underline"
+						>
+							OR key
 							<ExternalLink size={10} />
 						</a>
 					</div>
+
 					{testResult && (
 						<div
 							className={`flex items-center gap-2 text-[11px] ${

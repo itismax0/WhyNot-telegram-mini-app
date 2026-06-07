@@ -6,19 +6,38 @@ import {
 } from "./aiKnowledgeBase";
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-const ENV_DEFAULT_KEY =
-	(import.meta as any)?.env?.VITE_GROQ_KEY || "";
+const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
-export const GROQ_DEFAULT_KEY = ENV_DEFAULT_KEY;
+const GROQ_ENV_KEY = (import.meta as any)?.env?.VITE_GROQ_KEY || "";
+const OPENROUTER_ENV_KEY =
+	(import.meta as any)?.env?.VITE_OPENROUTER_KEY || "";
 
-export const AI_MODEL_FALLBACKS = [
+export const GROQ_DEFAULT_KEY = GROQ_ENV_KEY;
+export const OPENROUTER_DEFAULT_KEY = OPENROUTER_ENV_KEY;
+
+const GROQ_MODELS = [
 	"llama-3.3-70b-versatile",
 	"llama-3.1-8b-instant",
 	"gemma2-9b-it",
 	"mixtral-8x7b-32768",
 ];
 
-export const AI_MODEL_PRIMARY = AI_MODEL_FALLBACKS[0];
+const OPENROUTER_MODELS = [
+	"moonshotai/kimi-k2.6:free",
+	"google/gemma-4-31b-it:free",
+	"nvidia/nemotron-3-ultra-550b-a55b:free",
+	"qwen/qwen3-next-80b-a3b-instruct:free",
+];
+
+export const AI_MODEL_PRIMARY = GROQ_MODELS[0];
+
+type Provider = "groq" | "openrouter";
+
+function validateKey(key: string): Provider | null {
+	if (key.startsWith("gsk_")) return "groq";
+	if (key.startsWith("sk-")) return "openrouter";
+	return null;
+}
 
 export interface AIMessage {
 	role: "system" | "user" | "assistant";
@@ -31,12 +50,15 @@ export interface AIChatOptions {
 	maxTokens?: number;
 	signal?: AbortSignal;
 	apiKey?: string | null;
+	groqKey?: string | null;
+	openrouterKey?: string | null;
 	context?: AIContext | null;
 }
 
 export interface AIChatResult {
 	content: string;
 	model: string;
+	provider: Provider;
 }
 
 function buildSystemPrompt(context: AIContext | null | undefined): string {
@@ -55,40 +77,56 @@ function buildSystemPrompt(context: AIContext | null | undefined): string {
 	return sections.join("\n\n");
 }
 
-export async function aiChat({
-	messages,
-	temperature = 0.6,
-	maxTokens = 800,
-	signal,
-	apiKey,
-	context,
-}: AIChatOptions): Promise<AIChatResult> {
-	const systemPrompt = buildSystemPrompt(context || null);
-	const allMessages: AIMessage[] = [
-		{ role: "system", content: systemPrompt },
-		...messages,
-	];
+interface ProviderConfig {
+	url: string;
+	models: string[];
+	buildHeaders: (key: string) => Record<string, string>;
+}
 
-	const key = apiKey && apiKey.trim() ? apiKey.trim() : GROQ_DEFAULT_KEY;
-	if (!key) {
-		throw new Error(
-			"NO_API_KEY: Groq API key is not set. Add your key in Settings → AI assistant."
-		);
-	}
+const PROVIDERS: Record<Provider, ProviderConfig> = {
+	groq: {
+		url: GROQ_API_URL,
+		models: GROQ_MODELS,
+		buildHeaders: (key) => ({
+			Authorization: `Bearer ${key}`,
+			"Content-Type": "application/json",
+		}),
+	},
+	openrouter: {
+		url: OPENROUTER_API_URL,
+		models: OPENROUTER_MODELS,
+		buildHeaders: (key) => ({
+			Authorization: `Bearer ${key}`,
+			"Content-Type": "application/json",
+			"HTTP-Referer":
+				typeof window !== "undefined"
+					? window.location.origin
+					: "https://whynot-wallet.app",
+			"X-Title": "WhyNot Wallet",
+		}),
+	},
+};
 
+async function callProvider(
+	provider: Provider,
+	key: string,
+	messages: AIMessage[],
+	temperature: number,
+	maxTokens: number,
+	signal?: AbortSignal
+): Promise<AIChatResult> {
+	const config = PROVIDERS[provider];
 	let lastError: unknown = null;
+	const providerLabel = provider === "groq" ? "Groq" : "OpenRouter";
 
-	for (const model of AI_MODEL_FALLBACKS) {
+	for (const model of config.models) {
 		try {
-			const res = await fetch(GROQ_API_URL, {
+			const res = await fetch(config.url, {
 				method: "POST",
-				headers: {
-					Authorization: `Bearer ${key}`,
-					"Content-Type": "application/json",
-				},
+				headers: config.buildHeaders(key),
 				body: JSON.stringify({
 					model,
-					messages: allMessages,
+					messages,
 					temperature,
 					max_tokens: maxTokens,
 					stream: false,
@@ -99,7 +137,7 @@ export async function aiChat({
 			if (!res.ok) {
 				const text = await res.text().catch(() => "");
 				throw new Error(
-					`Groq ${res.status} on ${model}: ${text.substring(0, 200)}`
+					`${providerLabel} ${res.status} on ${model}: ${text.substring(0, 200)}`
 				);
 			}
 
@@ -108,7 +146,7 @@ export async function aiChat({
 			if (!content) {
 				throw new Error(`Empty response from ${model}`);
 			}
-			return { content, model };
+			return { content, model, provider };
 		} catch (e: any) {
 			if (e?.name === "AbortError") {
 				throw e;
@@ -119,8 +157,92 @@ export async function aiChat({
 	}
 
 	throw new Error(
-		`All AI models failed: ${lastError instanceof Error ? lastError.message : "unknown"}`
+		`All ${providerLabel} models failed: ${lastError instanceof Error ? lastError.message : "unknown"}`
 	);
+}
+
+export async function aiChat({
+	messages,
+	temperature = 0.6,
+	maxTokens = 800,
+	signal,
+	apiKey,
+	groqKey,
+	openrouterKey,
+	context,
+}: AIChatOptions): Promise<AIChatResult> {
+	const systemPrompt = buildSystemPrompt(context || null);
+	const allMessages: AIMessage[] = [
+		{ role: "system", content: systemPrompt },
+		...messages,
+	];
+
+	let resolvedGroq: string | null = null;
+	let resolvedOpenRouter: string | null = null;
+
+	if (apiKey && apiKey.trim()) {
+		const trimmed = apiKey.trim();
+		const provider = validateKey(trimmed);
+		if (!provider) {
+			throw new Error(
+				"NO_API_KEY: API key must start with `gsk_` (Groq) or `sk-` (OpenRouter)."
+			);
+		}
+		if (provider === "groq") resolvedGroq = trimmed;
+		else resolvedOpenRouter = trimmed;
+	} else {
+		resolvedGroq = groqKey && groqKey.trim() ? groqKey.trim() : GROQ_DEFAULT_KEY;
+		resolvedOpenRouter =
+			openrouterKey && openrouterKey.trim()
+				? openrouterKey.trim()
+				: OPENROUTER_DEFAULT_KEY;
+	}
+
+	if (!resolvedGroq && !resolvedOpenRouter) {
+		throw new Error(
+			"NO_API_KEY: No AI API key set. Add your Groq or OpenRouter key in Settings → AI assistant."
+		);
+	}
+
+	const lastErrors: unknown[] = [];
+
+	if (resolvedGroq) {
+		try {
+			return await callProvider(
+				"groq",
+				resolvedGroq,
+				allMessages,
+				temperature,
+				maxTokens,
+				signal
+			);
+		} catch (e: any) {
+			if (e?.name === "AbortError") throw e;
+			lastErrors.push(e);
+			console.warn("Groq failed, falling back to OpenRouter:", e?.message ?? e);
+		}
+	}
+
+	if (resolvedOpenRouter) {
+		return await callProvider(
+			"openrouter",
+			resolvedOpenRouter,
+			allMessages,
+			temperature,
+			maxTokens,
+			signal
+		);
+	}
+
+	throw new Error(
+		`All AI providers failed: ${lastErrors
+			.map((e) => (e instanceof Error ? e.message : "unknown"))
+			.join("; ")}`
+	);
+}
+
+export function detectKeyProvider(key: string): Provider | null {
+	return validateKey(key);
 }
 
 export interface AIRawTurn {

@@ -229,6 +229,8 @@ interface WalletContextType {
 	setSelectedAsset: (a: any) => void;
 	groqKey: string | null;
 	setGroqKey: (k: string | null) => void;
+	openrouterKey: string | null;
+	setOpenrouterKey: (k: string | null) => void;
 }
 
 const WalletContext = createContext<WalletContextType>({} as WalletContextType);
@@ -247,14 +249,17 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 	const [seedRevealed, setSeedRevealed] = useState<boolean>(false);
 	const [selectedAsset, setSelectedAsset] = useState<any>(null);
 	const [groqKey, setGroqKeyState] = useState<string | null>(null);
+	const [openrouterKey, setOpenrouterKeyState] = useState<string | null>(null);
 
 	useEffect(() => {
 		const savedLang = localStorage.getItem("wallet_lang") as Language;
 		if (savedLang) setLanguageState(savedLang);
 		const savedNet = localStorage.getItem("wallet_net") as NetworkMode;
 		if (savedNet) setNetworkModeState(savedNet);
-		const savedKey = localStorage.getItem("whynot_groq_key");
-		if (savedKey) setGroqKeyState(savedKey);
+		const savedGroq = localStorage.getItem("whynot_groq_key");
+		if (savedGroq) setGroqKeyState(savedGroq);
+		const savedOr = localStorage.getItem("whynot_openrouter_key");
+		if (savedOr) setOpenrouterKeyState(savedOr);
 	}, []);
 
 	const setLanguage = (l: Language) => {
@@ -274,6 +279,16 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 		} else {
 			setGroqKeyState(null);
 			localStorage.removeItem("whynot_groq_key");
+		}
+	};
+
+	const setOpenrouterKey = (k: string | null) => {
+		if (k && k.trim()) {
+			setOpenrouterKeyState(k.trim());
+			localStorage.setItem("whynot_openrouter_key", k.trim());
+		} else {
+			setOpenrouterKeyState(null);
+			localStorage.removeItem("whynot_openrouter_key");
 		}
 	};
 
@@ -316,6 +331,8 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 				setSelectedAsset,
 				groqKey,
 				setGroqKey,
+				openrouterKey,
+				setOpenrouterKey,
 			}}
 		>
 			{children}

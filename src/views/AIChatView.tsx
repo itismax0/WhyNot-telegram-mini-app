@@ -354,6 +354,7 @@ export const AIChatView = () => {
 		selectedAsset,
 		networkMode,
 		groqKey,
+		openrouterKey,
 	} = useWallet();
 	const [turns, setTurns] = useState<ChatTurn[]>(() => loadHistory());
 	const [input, setInput] = useState("");
@@ -425,7 +426,8 @@ export const AIChatView = () => {
 				const result = await aiChat({
 					messages: apiMessages,
 					signal: abortRef.current.signal,
-						apiKey: groqKey,
+					apiKey: groqKey,
+					openrouterKey,
 					context: apiContext,
 				});
 				lastModel = result.model;
@@ -524,16 +526,16 @@ export const AIChatView = () => {
 			let friendly = "Failed to get a response. Please try again.";
 			if (msg.includes("429")) {
 				friendly = language === "ru"
-					? "Достигнут лимит Groq (429). Добавьте свой ключ в Настройки или подождите."
-					: "Groq rate limit (429). Add your own key in Settings or wait.";
+					? "Достигнут лимит (429). Добавьте свой ключ в Настройки или подождите."
+					: "Rate limit (429). Add your own key in Settings or wait.";
 			} else 			if (msg.includes("401") || msg.includes("403")) {
 				friendly = language === "ru"
-					? "Неверный Groq ключ. Откройте Настройки и проверьте ключ."
-					: "Invalid Groq key. Open Settings and check your key.";
+					? "Неверный API ключ. Откройте Настройки и проверьте ключ."
+					: "Invalid API key. Open Settings and check your key.";
 			} else if (msg.includes("NO_API_KEY")) {
 				friendly = language === "ru"
-					? "Groq ключ не задан. Откройте Настройки → AI assistant и добавьте свой ключ."
-					: "Groq key is not set. Open Settings → AI assistant and add your key.";
+					? "AI ключ не задан. Откройте Настройки → AI assistant и добавьте Groq или OpenRouter ключ."
+					: "AI key is not set. Open Settings → AI assistant and add a Groq or OpenRouter key.";
 			}
 			setError(friendly);
 		} finally {
@@ -727,7 +729,7 @@ export const AIChatView = () => {
 						{error && (
 							<div className="bg-red-500/10 border border-red-500/30 rounded-[14px] px-4 py-3 text-[12px] text-red-400 flex flex-col gap-2">
 								<span>{error}</span>
-								{!groqKey && (
+								{!groqKey && !openrouterKey && (
 									<button
 										onClick={handleGoToSettings}
 										className="self-start flex items-center gap-1 text-[11px] text-[#387aff] hover:underline"
