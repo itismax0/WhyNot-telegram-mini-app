@@ -134,11 +134,11 @@ const VIEWS: AIKnowledgeView[] = [
 		id: "settings",
 		title: "Settings",
 		trigger: "Main → gear icon, or bottom nav → Settings",
-		purpose: "Network, language, OpenRouter key, view seed, wipe",
+		purpose: "Network, language, Groq key, view seed, wipe",
 		actions: [
 			"Network select (mainnet/testnet/devnet)",
 			"Language toggle EN/RU",
-			"OpenRouter API key (for AI assistant)",
+			"Groq API key (for AI assistant)",
 			"View Seed (PIN-protected)",
 			"Wipe Wallet (deletes all data)",
 		],
@@ -168,7 +168,7 @@ const VIEWS: AIKnowledgeView[] = [
 		id: "ai",
 		title: "AI assistant",
 		trigger: "AI banner on main, or from token_detail (future)",
-		purpose: "Chat with LLM (OpenRouter)",
+		purpose: "Chat with LLM (Groq)",
 		actions: [
 			"4 quick suggestions",
 			"Input + send",
@@ -297,7 +297,7 @@ const SOURCES = [
 	{ name: "Blockscout (eth.blockscout.com)", purpose: "ETH addresses, transactions, ABI", auth: "none" },
 	{ name: "Solana RPC (public)", purpose: "SOL balance, signatures, transactions", auth: "none" },
 	{ name: "DexScreener", purpose: "Token search, pairs, liquidity, volume, FDV", auth: "none" },
-	{ name: "OpenRouter", purpose: "LLM completions (chat)", auth: "Bearer token (user's own key)" },
+	{ name: "Groq", purpose: "LLM completions (chat, OpenAI-compatible)", auth: "Bearer token (user's own key)" },
 ];
 
 const TON_FACTS = [

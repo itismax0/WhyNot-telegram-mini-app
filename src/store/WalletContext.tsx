@@ -227,8 +227,8 @@ interface WalletContextType {
 	setSeedRevealed: (v: boolean) => void;
 	selectedAsset: any;
 	setSelectedAsset: (a: any) => void;
-	openrouterKey: string | null;
-	setOpenrouterKey: (k: string | null) => void;
+	groqKey: string | null;
+	setGroqKey: (k: string | null) => void;
 }
 
 const WalletContext = createContext<WalletContextType>({} as WalletContextType);
@@ -246,15 +246,15 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 	const [tempPin, setTempPin] = useState<string>("");
 	const [seedRevealed, setSeedRevealed] = useState<boolean>(false);
 	const [selectedAsset, setSelectedAsset] = useState<any>(null);
-	const [openrouterKey, setOpenrouterKeyState] = useState<string | null>(null);
+	const [groqKey, setGroqKeyState] = useState<string | null>(null);
 
 	useEffect(() => {
 		const savedLang = localStorage.getItem("wallet_lang") as Language;
 		if (savedLang) setLanguageState(savedLang);
 		const savedNet = localStorage.getItem("wallet_net") as NetworkMode;
 		if (savedNet) setNetworkModeState(savedNet);
-		const savedKey = localStorage.getItem("whynot_openrouter_key");
-		if (savedKey) setOpenrouterKeyState(savedKey);
+		const savedKey = localStorage.getItem("whynot_groq_key");
+		if (savedKey) setGroqKeyState(savedKey);
 	}, []);
 
 	const setLanguage = (l: Language) => {
@@ -267,13 +267,13 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 		localStorage.setItem("wallet_net", m);
 	};
 
-	const setOpenrouterKey = (k: string | null) => {
+	const setGroqKey = (k: string | null) => {
 		if (k && k.trim()) {
-			setOpenrouterKeyState(k.trim());
-			localStorage.setItem("whynot_openrouter_key", k.trim());
+			setGroqKeyState(k.trim());
+			localStorage.setItem("whynot_groq_key", k.trim());
 		} else {
-			setOpenrouterKeyState(null);
-			localStorage.removeItem("whynot_openrouter_key");
+			setGroqKeyState(null);
+			localStorage.removeItem("whynot_groq_key");
 		}
 	};
 
@@ -314,8 +314,8 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 				setSeedRevealed,
 				selectedAsset,
 				setSelectedAsset,
-				openrouterKey,
-				setOpenrouterKey,
+				groqKey,
+				setGroqKey,
 			}}
 		>
 			{children}

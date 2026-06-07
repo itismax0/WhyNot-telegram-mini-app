@@ -353,7 +353,7 @@ export const AIChatView = () => {
 		view,
 		selectedAsset,
 		networkMode,
-		openrouterKey,
+		groqKey,
 	} = useWallet();
 	const [turns, setTurns] = useState<ChatTurn[]>(() => loadHistory());
 	const [input, setInput] = useState("");
@@ -425,7 +425,7 @@ export const AIChatView = () => {
 				const result = await aiChat({
 					messages: apiMessages,
 					signal: abortRef.current.signal,
-					apiKey: openrouterKey,
+						apiKey: groqKey,
 					context: apiContext,
 				});
 				lastModel = result.model;
@@ -490,7 +490,7 @@ export const AIChatView = () => {
 					const finalResult = await aiChat({
 						messages: buildApiMessages(currentTurns, toolMessages),
 						signal: abortRef.current.signal,
-						apiKey: openrouterKey,
+					apiKey: groqKey,
 						context: apiContext,
 					});
 					lastModel = finalResult.model;
@@ -524,16 +524,16 @@ export const AIChatView = () => {
 			let friendly = "Failed to get a response. Please try again.";
 			if (msg.includes("429")) {
 				friendly = language === "ru"
-					? "Достигнут лимит OpenRouter (429). Добавьте свой ключ в Настройки или подождите."
-					: "OpenRouter rate limit (429). Add your own key in Settings or wait.";
+					? "Достигнут лимит Groq (429). Добавьте свой ключ в Настройки или подождите."
+					: "Groq rate limit (429). Add your own key in Settings or wait.";
 			} else 			if (msg.includes("401") || msg.includes("403")) {
 				friendly = language === "ru"
-					? "Неверный OpenRouter ключ. Откройте Настройки и проверьте ключ."
-					: "Invalid OpenRouter key. Open Settings and check your key.";
+					? "Неверный Groq ключ. Откройте Настройки и проверьте ключ."
+					: "Invalid Groq key. Open Settings and check your key.";
 			} else if (msg.includes("NO_API_KEY")) {
 				friendly = language === "ru"
-					? "OpenRouter ключ не задан. Откройте Настройки → AI assistant и добавьте свой ключ."
-					: "OpenRouter key is not set. Open Settings → AI assistant and add your key.";
+					? "Groq ключ не задан. Откройте Настройки → AI assistant и добавьте свой ключ."
+					: "Groq key is not set. Open Settings → AI assistant and add your key.";
 			}
 			setError(friendly);
 		} finally {
@@ -727,7 +727,7 @@ export const AIChatView = () => {
 						{error && (
 							<div className="bg-red-500/10 border border-red-500/30 rounded-[14px] px-4 py-3 text-[12px] text-red-400 flex flex-col gap-2">
 								<span>{error}</span>
-								{!openrouterKey && (
+								{!groqKey && (
 									<button
 										onClick={handleGoToSettings}
 										className="self-start flex items-center gap-1 text-[11px] text-[#387aff] hover:underline"

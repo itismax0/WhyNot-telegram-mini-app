@@ -5,17 +5,17 @@ import {
 	type AIContext,
 } from "./aiKnowledgeBase";
 
-const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const ENV_DEFAULT_KEY =
-	(import.meta as any)?.env?.VITE_OPENROUTER_KEY || "";
+	(import.meta as any)?.env?.VITE_GROQ_KEY || "";
 
-export const OPENROUTER_DEFAULT_KEY = ENV_DEFAULT_KEY;
+export const GROQ_DEFAULT_KEY = ENV_DEFAULT_KEY;
 
 export const AI_MODEL_FALLBACKS = [
-	"moonshotai/kimi-k2.6:free",
-	"google/gemma-4-31b-it:free",
-	"nvidia/nemotron-3-ultra-550b-a55b:free",
-	"qwen/qwen3-next-80b-a3b-instruct:free",
+	"llama-3.3-70b-versatile",
+	"llama-3.1-8b-instant",
+	"gemma2-9b-it",
+	"mixtral-8x7b-32768",
 ];
 
 export const AI_MODEL_PRIMARY = AI_MODEL_FALLBACKS[0];
@@ -69,10 +69,10 @@ export async function aiChat({
 		...messages,
 	];
 
-	const key = apiKey && apiKey.trim() ? apiKey.trim() : OPENROUTER_DEFAULT_KEY;
+	const key = apiKey && apiKey.trim() ? apiKey.trim() : GROQ_DEFAULT_KEY;
 	if (!key) {
 		throw new Error(
-			"NO_API_KEY: OpenRouter API key is not set. Add your key in Settings → AI assistant."
+			"NO_API_KEY: Groq API key is not set. Add your key in Settings → AI assistant."
 		);
 	}
 
@@ -80,16 +80,11 @@ export async function aiChat({
 
 	for (const model of AI_MODEL_FALLBACKS) {
 		try {
-			const res = await fetch(OPENROUTER_API_URL, {
+			const res = await fetch(GROQ_API_URL, {
 				method: "POST",
 				headers: {
 					Authorization: `Bearer ${key}`,
 					"Content-Type": "application/json",
-					"HTTP-Referer":
-						typeof window !== "undefined"
-							? window.location.origin
-							: "https://whynot-wallet.app",
-					"X-Title": "WhyNot Wallet",
 				},
 				body: JSON.stringify({
 					model,
@@ -104,7 +99,7 @@ export async function aiChat({
 			if (!res.ok) {
 				const text = await res.text().catch(() => "");
 				throw new Error(
-					`OpenRouter ${res.status} on ${model}: ${text.substring(0, 200)}`
+					`Groq ${res.status} on ${model}: ${text.substring(0, 200)}`
 				);
 			}
 

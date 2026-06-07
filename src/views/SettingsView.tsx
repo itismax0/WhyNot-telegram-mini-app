@@ -31,11 +31,11 @@ export const SettingsView = () => {
 		showToast,
 		seedRevealed,
 		setSeedRevealed,
-		openrouterKey,
-		setOpenrouterKey,
+		groqKey,
+		setGroqKey,
 	} = useWallet();
 
-	const [keyDraft, setKeyDraft] = useState(openrouterKey || "");
+	const [keyDraft, setKeyDraft] = useState(groqKey || "");
 	const [showKey, setShowKey] = useState(false);
 	const [testing, setTesting] = useState(false);
 	const [testResult, setTestResult] = useState<
@@ -75,7 +75,7 @@ export const SettingsView = () => {
 	const handleSaveKey = () => {
 		const v = keyDraft.trim();
 		if (!v) {
-			setOpenrouterKey(null);
+			setGroqKey(null);
 			showToast("AI key cleared");
 			setTestResult(null);
 			return;
@@ -84,14 +84,14 @@ export const SettingsView = () => {
 			showToast("Key should start with sk-…");
 			return;
 		}
-		setOpenrouterKey(v);
+		setGroqKey(v);
 		showToast("AI key saved");
 		setTestResult(null);
 	};
 
 	const handleClearKey = () => {
 		setKeyDraft("");
-		setOpenrouterKey(null);
+		setGroqKey(null);
 		setTestResult(null);
 		showToast("AI key cleared");
 	};
@@ -216,7 +216,7 @@ export const SettingsView = () => {
 							)}
 							Test connection
 						</button>
-						{openrouterKey && (
+						{groqKey && (
 							<button
 								onClick={handleClearKey}
 								className="flex items-center gap-1.5 bg-[#222] hover:bg-red-950/40 text-gray-400 hover:text-red-400 text-xs font-medium px-3 py-2 rounded-xl active:scale-95 transition-colors"
@@ -226,7 +226,7 @@ export const SettingsView = () => {
 							</button>
 						)}
 						<a
-							href="https://openrouter.ai/keys"
+							href="https://console.groq.com/keys"
 							target="_blank"
 							rel="noreferrer noopener"
 							className="ml-auto flex items-center gap-1 text-[10px] text-[#387aff] hover:underline"
