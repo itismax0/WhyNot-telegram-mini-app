@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
 import {
 	ArrowDownToLine,
-	ArrowUpDown,
 	ArrowUpRight,
 	Eye,
 	EyeOff,
@@ -822,8 +821,6 @@ export const SendView = () => {
 	const [repResult, setRepResult] = useState<ReputationDetails | null>(null);
 	const [showDetails, setShowDetails] = useState(false);
 	const [showAssetDropdown, setShowAssetDropdown] = useState(false);
-	const [showReceiveAssetDropdown, setShowReceiveAssetDropdown] = useState(false);
-	const [receiveAsset, setReceiveAsset] = useState(ASSETS[3]);
 	const [addressError, setAddressError] = useState<string | null>(null);
 	const [stage, setStage] = useState<"form" | "confirm" | "success">("form");
 	const latestCleanRef = useRef("");
@@ -934,18 +931,6 @@ export const SendView = () => {
 	const conversionRate = rates[asset.id] || 0;
 	const usdEquivalent = Number(amount) * conversionRate;
 	const assetBalance = balances[asset.id] || 0;
-	const receiveRate = rates[receiveAsset.id] || 0;
-	const receiveAmount =
-		receiveRate > 0 ? usdEquivalent / receiveRate : 0;
-	const receiveBalance = balances[receiveAsset.id] || 0;
-	const exchangeRate =
-		receiveRate > 0 ? conversionRate / receiveRate : 0;
-	const swapAssets = () => {
-		setAsset(receiveAsset);
-		setReceiveAsset(asset);
-		setShowAssetDropdown(false);
-		setShowReceiveAssetDropdown(false);
-	};
 
 	const firstLetter = address
 		? address.replace("@", "").trim().charAt(0).toUpperCase()
