@@ -43,14 +43,14 @@ const SWAP_STATUS_LABELS_EN: Record<TradeStatusType, string> = {
 };
 
 const SWAP_STATUS_LABELS_RU: Record<TradeStatusType, string> = {
-	awaiting_transfer: "РћР¶РёРґР°РЅРёРµ РїРµСЂРµРІРѕРґР°",
-	transferring: "РћС‚РїСЂР°РІРєР° СЃСЂРµРґСЃС‚РІ",
-	swapping: "РћР±РјРµРЅ С‡РµСЂРµР· DEX",
-	awaiting_fill: "РћР¶РёРґР°РЅРёРµ РёСЃРїРѕР»РЅРµРЅРёСЏ",
-	claim_available: "Р”РѕСЃС‚СѓРїРµРЅ РєР»РµР№Рј",
-	refund_available: "Р”РѕСЃС‚СѓРїРµРЅ РІРѕР·РІСЂР°С‚",
-	receiving_funds: "РџРѕР»СѓС‡РµРЅРёРµ СЃСЂРµРґСЃС‚РІ",
-	trade_settled: "РћР±РјРµРЅ Р·Р°РІРµСЂС€С‘РЅ",
+	awaiting_transfer: "Ожидание перевода",
+	transferring: "Отправка средств",
+	swapping: "Обмен через DEX",
+	awaiting_fill: "Ожидание исполнения",
+	claim_available: "Доступен клейм",
+	refund_available: "Доступен возврат",
+	receiving_funds: "Получение средств",
+	trade_settled: "Обмен завершён",
 };
 
 const toUnits = (amount: string, decimals: number): string => {
@@ -295,7 +295,7 @@ export const SwapView = () => {
 		) {
 			setQuoteState("error");
 			setQuoteError(
-				language === "ru" ? "Р’С‹Р±РµСЂРёС‚Рµ С‚РѕРєРµРЅС‹" : "Select tokens"
+				language === "ru" ? "Выберите токены" : "Select tokens"
 			);
 			return;
 		}
@@ -304,7 +304,7 @@ export const SwapView = () => {
 			setQuoteState("error");
 			setQuoteError(
 				language === "ru"
-					? "BTC РєР°Рє РёСЃС…РѕРґРЅС‹Р№ С‚РѕРєРµРЅ РїРѕРєР° РЅРµ РїРѕРґРґРµСЂР¶РёРІР°РµС‚СЃСЏ"
+					? "BTC как исходный токен пока не поддерживается"
 					: "BTC as source token is not supported yet"
 			);
 			return;
@@ -322,7 +322,7 @@ export const SwapView = () => {
 			setQuoteState("error");
 			setQuoteError(
 				language === "ru"
-					? "Р­С‚Р° РїР°СЂР° С‚РѕРєРµРЅРѕРІ РїРѕРєР° РЅРµ РїРѕРґРґРµСЂР¶РёРІР°РµС‚СЃСЏ"
+					? "Эта пара токенов пока не поддерживается"
 					: "This pair is not supported yet"
 			);
 			return;
@@ -360,7 +360,7 @@ export const SwapView = () => {
 						setQuoteState("error");
 						setQuoteError(
 							language === "ru"
-								? "РљРѕС€РµР»С‘Рє РґР»СЏ СЌС‚РѕР№ СЃРµС‚Рё РЅРµ РЅР°Р№РґРµРЅ"
+								? "Кошелёк для этой сети не найден"
 								: "Wallet for this network not found"
 						);
 						return;
@@ -398,7 +398,7 @@ export const SwapView = () => {
 				setQuoteError(
 					msg.includes("Symbiosis")
 						? language === "ru"
-							? "РњР°СЂС€СЂСѓС‚ РЅРµ РЅР°Р№РґРµРЅ РґР»СЏ СЌС‚РѕР№ РїР°СЂС‹"
+							? "Маршрут не найден для этой пары"
 							: "No route for this pair"
 						: msg
 				);
@@ -477,13 +477,13 @@ export const SwapView = () => {
 								setStage("success");
 								showToast(
 									language === "ru"
-										? "РћР±РјРµРЅ Р·Р°РІРµСЂС€С‘РЅ"
+										? "Обмен завершён"
 										: "Swap completed"
 								);
 							} else if (result === 3) {
 								setSubmitError(
 									language === "ru"
-										? "РћР±РјРµРЅ РѕС‚РјРµРЅС‘РЅ"
+										? "Обмен отменён"
 										: "Swap aborted"
 								);
 								setStage("error");
@@ -491,7 +491,7 @@ export const SwapView = () => {
 						} else if (status === "refund_available") {
 							setSubmitError(
 								language === "ru"
-									? "РўСЂР°РЅР·Р°РєС†РёСЏ РёСЃС‚РµРєР»Р°, СЃСЂРµРґСЃС‚РІР° РјРѕР¶РЅРѕ РІРµСЂРЅСѓС‚СЊ"
+									? "Транзакция истекла, средства можно вернуть"
 									: "Transaction expired, refund available"
 							);
 							setStage("error");
@@ -537,14 +537,14 @@ export const SwapView = () => {
 						setStage("success");
 						showToast(
 							language === "ru"
-								? "РћР±РјРµРЅ Р·Р°РІРµСЂС€С‘РЅ"
+								? "Обмен завершён"
 								: "Swap completed"
 						);
 					} else if (status?.status === "refund" || status?.status === "fail") {
 						clearInterval(pollInterval);
 						setSubmitError(
 							language === "ru"
-								? "РўСЂР°РЅР·Р°РєС†РёСЏ РЅРµ РїСЂРѕС€Р»Р°, СЃСЂРµРґСЃС‚РІР° РјРѕР¶РЅРѕ РІРµСЂРЅСѓС‚СЊ"
+								? "Транзакция не прошла, средства можно вернуть"
 								: "Transaction failed, refund available"
 						);
 						setStage("error");
@@ -557,7 +557,7 @@ export const SwapView = () => {
 			setSubmitError(
 				e?.message ??
 					(language === "ru"
-						? "РќРµ СѓРґР°Р»РѕСЃСЊ РІС‹РїРѕР»РЅРёС‚СЊ РѕР±РјРµРЅ"
+						? "Не удалось выполнить обмен"
 						: "Swap failed")
 			);
 			setStage("error");
@@ -628,7 +628,7 @@ export const SwapView = () => {
 					</button>
 					<div className="text-center flex-1">
 						<h2 className="font-semibold text-[17px] text-white">
-							{language === "ru" ? "РћР±РјРµРЅ" : "Swap"}
+							{language === "ru" ? "Обмен" : "Swap"}
 						</h2>
 						<p className="text-[11px] text-gray-500 font-medium tracking-wide mt-0.5">
 							WhyNotWallet
@@ -651,11 +651,11 @@ export const SwapView = () => {
 						<CheckCircle2 size={56} className="text-green-500" />
 					</motion.div>
 					<h1 className="text-[26px] font-bold text-white mb-2">
-						{language === "ru" ? "РћР±РјРµРЅ Р·Р°РІРµСЂС€С‘РЅ" : "Swap completed"}
+						{language === "ru" ? "Обмен завершён" : "Swap completed"}
 					</h1>
 					<p className="text-[14px] text-[#8e8e93] text-center max-w-[260px]">
 						{language === "ru"
-							? "РЎСЂРµРґСЃС‚РІР° Р·Р°С‡РёСЃР»РµРЅС‹ РЅР° РІР°С€ РєРѕС€РµР»С‘Рє"
+							? "Средства зачислены на ваш кошелёк"
 							: "Funds have been credited to your wallet"}
 					</p>
 				</div>
@@ -667,7 +667,7 @@ export const SwapView = () => {
 				>
 					<div className="flex justify-between items-center px-5 py-4 border-b border-[#202023]/60">
 						<span className="text-[14px] text-[#8e8e93]">
-							{language === "ru" ? "РћС‚РїСЂР°РІР»РµРЅРѕ" : "Sent"}
+							{language === "ru" ? "Отправлено" : "Sent"}
 						</span>
 						<span className="text-[15px] font-semibold text-white font-mono">
 							{swapResult.fromAmount.toLocaleString("en-US", {
@@ -678,10 +678,10 @@ export const SwapView = () => {
 					</div>
 					<div className="flex justify-between items-center px-5 py-4 border-b border-[#202023]/60">
 						<span className="text-[14px] text-[#8e8e93]">
-							{language === "ru" ? "РџРѕР»СѓС‡РµРЅРѕ" : "Received"}
+							{language === "ru" ? "Получено" : "Received"}
 						</span>
 						<span className="text-[15px] font-semibold text-[#30d158] font-mono">
-							в‰€ {swapResult.toAmount.toLocaleString("en-US", {
+							≈ {swapResult.toAmount.toLocaleString("en-US", {
 								maximumFractionDigits: 6,
 							})}{" "}
 							{toToken.symbol}
@@ -690,7 +690,7 @@ export const SwapView = () => {
 					{txHash && (
 						<div className="flex justify-between items-center px-5 py-4">
 							<span className="text-[14px] text-[#8e8e93]">
-								{language === "ru" ? "РўСЂР°РЅР·Р°РєС†РёСЏ" : "Transaction"}
+								{language === "ru" ? "Транзакция" : "Transaction"}
 							</span>
 							{explorerUrl ? (
 								<a
@@ -699,11 +699,11 @@ export const SwapView = () => {
 									rel="noopener noreferrer"
 									className="text-[12px] text-[#387aff] font-mono truncate max-w-[200px] hover:underline"
 								>
-									{txHash.slice(0, 10)}вЂ¦{txHash.slice(-6)} в†—
+									{txHash.slice(0, 10)}…{txHash.slice(-6)} ↗
 								</a>
 							) : (
 								<span className="text-[12px] text-white font-mono truncate max-w-[180px]">
-									{txHash.slice(0, 10)}вЂ¦{txHash.slice(-6)}
+									{txHash.slice(0, 10)}…{txHash.slice(-6)}
 								</span>
 							)}
 						</div>
@@ -715,7 +715,7 @@ export const SwapView = () => {
 						onClick={handleBack}
 						className="w-full py-4 bg-[#387aff] hover:bg-[#2d6de0] active:bg-[#2460c7] text-white text-[17px] font-semibold rounded-[18px] transition-all"
 					>
-						{language === "ru" ? "РќРѕРІС‹Р№ РѕР±РјРµРЅ" : "New swap"}
+						{language === "ru" ? "Новый обмен" : "New swap"}
 					</button>
 				</div>
 			</motion.div>
@@ -728,8 +728,8 @@ export const SwapView = () => {
 				? SWAP_STATUS_LABELS_RU[trackStatus]
 				: SWAP_STATUS_LABELS_EN[trackStatus]
 			: language === "ru"
-				? "РџРѕРґРіРѕС‚РѕРІРєР° С‚СЂР°РЅР·Р°РєС†РёРёвЂ¦"
-				: "Preparing transactionвЂ¦";
+				? "Подготовка транзакции…"
+				: "Preparing transaction…";
 
 		return (
 			<motion.div
@@ -741,7 +741,7 @@ export const SwapView = () => {
 					<div className="w-9 h-9" />
 					<div className="text-center flex-1">
 						<h2 className="font-semibold text-[17px] text-white">
-							{language === "ru" ? "РћР±РјРµРЅ" : "Swap"}
+							{language === "ru" ? "Обмен" : "Swap"}
 						</h2>
 						<p className="text-[11px] text-gray-500 font-medium tracking-wide mt-0.5">
 							WhyNotWallet
@@ -757,8 +757,8 @@ export const SwapView = () => {
 					/>
 					<h1 className="text-[22px] font-bold text-white mb-2">
 						{language === "ru"
-							? "РћР±РјРµРЅ РІС‹РїРѕР»РЅСЏРµС‚СЃСЏвЂ¦"
-							: "Swap in progressвЂ¦"}
+							? "Обмен выполняется…"
+							: "Swap in progress…"}
 					</h1>
 					<p className="text-[14px] text-[#8e8e93] text-center max-w-[260px]">
 						{statusLabel}
@@ -772,7 +772,7 @@ export const SwapView = () => {
 				>
 				<div className="flex justify-between items-center px-5 py-4 border-b border-[#202023]/60">
 					<span className="text-[14px] text-[#8e8e93]">
-						{language === "ru" ? "РћС‚РїСЂР°РІР»СЏРµС‚Рµ" : "You send"}
+						{language === "ru" ? "Отправляете" : "You send"}
 					</span>
 					<span className="text-[15px] font-semibold text-white font-mono">
 						{Number(fromAmount).toLocaleString("en-US", {
@@ -783,10 +783,10 @@ export const SwapView = () => {
 				</div>
 				<div className="flex justify-between items-center px-5 py-4 border-b border-[#202023]/60">
 					<span className="text-[14px] text-[#8e8e93]">
-						{language === "ru" ? "РџРѕР»СѓС‡Р°РµС‚Рµ" : "You receive"}
+						{language === "ru" ? "Получаете" : "You receive"}
 					</span>
 					<span className="text-[15px] font-semibold text-[#30d158] font-mono">
-						в‰€{" "}
+						≈{" "}
 						{expectedToAmount.toLocaleString("en-US", {
 							maximumFractionDigits: 6,
 						})}{" "}
@@ -796,7 +796,7 @@ export const SwapView = () => {
 					{txHash && (
 						<div className="flex justify-between items-center px-5 py-4">
 							<span className="text-[14px] text-[#8e8e93]">
-								{language === "ru" ? "РҐСЌС€" : "Hash"}
+								{language === "ru" ? "Хэш" : "Hash"}
 							</span>
 							{explorerUrl ? (
 								<a
@@ -805,11 +805,11 @@ export const SwapView = () => {
 									rel="noopener noreferrer"
 									className="text-[12px] text-[#387aff] font-mono truncate max-w-[220px] hover:underline"
 								>
-									{txHash.slice(0, 10)}вЂ¦{txHash.slice(-6)} в†—
+									{txHash.slice(0, 10)}…{txHash.slice(-6)} ↗
 								</a>
 							) : (
 								<span className="text-[12px] text-white font-mono truncate max-w-[200px]">
-									{txHash.slice(0, 10)}вЂ¦{txHash.slice(-6)}
+									{txHash.slice(0, 10)}…{txHash.slice(-6)}
 								</span>
 							)}
 						</div>
@@ -821,7 +821,7 @@ export const SwapView = () => {
 						onClick={handleBack}
 						className="w-full py-4 bg-[#1c1c1e] hover:bg-[#252528] text-white text-[16px] font-medium rounded-[18px] transition-all"
 					>
-						{language === "ru" ? "РћС‚РјРµРЅР°" : "Cancel"}
+						{language === "ru" ? "Отмена" : "Cancel"}
 					</button>
 				</div>
 			</motion.div>
@@ -844,7 +844,7 @@ export const SwapView = () => {
 					</button>
 					<div className="text-center flex-1">
 						<h2 className="font-semibold text-[17px] text-white">
-							{language === "ru" ? "РћР±РјРµРЅ" : "Swap"}
+							{language === "ru" ? "Обмен" : "Swap"}
 						</h2>
 						<p className="text-[11px] text-gray-500 font-medium tracking-wide mt-0.5">
 							WhyNotWallet
@@ -859,7 +859,7 @@ export const SwapView = () => {
 					</div>
 					<h1 className="text-[22px] font-bold text-white mb-2">
 						{language === "ru"
-							? "РќРµ СѓРґР°Р»РѕСЃСЊ РІС‹РїРѕР»РЅРёС‚СЊ РѕР±РјРµРЅ"
+							? "Не удалось выполнить обмен"
 							: "Swap failed"}
 					</h1>
 					{submitError && (
@@ -872,9 +872,9 @@ export const SwapView = () => {
 				<div className="mt-auto">
 					<button
 						onClick={handleBack}
-						className="w-full py-4 bg-[#387aff] hover:bg-[#2d6de0] text-white text-[17px] font-semibold rounded-[18px] transition-all"
+						className="w-full py-4 bg-[#387aff] hover:bg-[#2d6de0] active:bg-[#2460c7] text-white text-[17px] font-semibold rounded-[18px] transition-all"
 					>
-						{language === "ru" ? "РџРѕРїСЂРѕР±РѕРІР°С‚СЊ СЃРЅРѕРІР°" : "Try again"}
+						{language === "ru" ? "Попробовать снова" : "Try again"}
 					</button>
 				</div>
 			</motion.div>
@@ -896,7 +896,7 @@ export const SwapView = () => {
 				</button>
 				<div className="text-center flex-1">
 					<h2 className="font-semibold text-[17px] text-white">
-						{language === "ru" ? "РћР±РјРµРЅ" : "Swap"}
+						{language === "ru" ? "Обмен" : "Swap"}
 					</h2>
 					<p className="text-[11px] text-gray-500 font-medium tracking-wide mt-0.5">
 						WhyNotWallet
@@ -909,11 +909,11 @@ export const SwapView = () => {
 				<div className="bg-[#121214] border border-[#202023]/60 rounded-[24px] p-5 mb-0.5">
 					<div className="flex justify-between items-center mb-4">
 						<span className="text-[14px] text-[#8e8e93] font-medium">
-							{language === "ru" ? "Р’С‹ РѕС‚РїСЂР°РІР»СЏРµС‚Рµ" : "You send"}
+							{language === "ru" ? "Вы отправляете" : "You send"}
 						</span>
 						<div className="flex items-center gap-1.5">
 							<span className="text-[13px] text-[#8e8e93]">
-								{language === "ru" ? "Р‘Р°Р»Р°РЅСЃ:" : "Balance:"}{" "}
+								{language === "ru" ? "Баланс:" : "Balance:"}{" "}
 								{fromBalance.toLocaleString("en-US", {
 									maximumFractionDigits: 4,
 								})}{" "}
@@ -923,7 +923,7 @@ export const SwapView = () => {
 								onClick={handleMax}
 								className="text-[13px] text-[#007aff] font-bold ml-1 hover:opacity-80 transition-opacity"
 							>
-								{language === "ru" ? "РњРђРљРЎ" : "MAX"}
+								{language === "ru" ? "МАКС" : "MAX"}
 							</button>
 						</div>
 					</div>
@@ -963,10 +963,10 @@ export const SwapView = () => {
 				<div className="bg-[#121214] border border-[#202023]/60 rounded-[24px] p-5 mt-0.5">
 					<div className="flex justify-between items-center mb-4">
 						<span className="text-[14px] text-[#8e8e93] font-medium">
-							{language === "ru" ? "Р’С‹ РїРѕР»СѓС‡Р°РµС‚Рµ" : "You receive"}
+							{language === "ru" ? "Вы получаете" : "You receive"}
 						</span>
 						<span className="text-[13px] text-[#8e8e93]">
-							{language === "ru" ? "Р‘Р°Р»Р°РЅСЃ:" : "Balance:"}{" "}
+							{language === "ru" ? "Баланс:" : "Balance:"}{" "}
 							{toBalance.toLocaleString("en-US", {
 									maximumFractionDigits: 4,
 								})}{" "}
@@ -986,21 +986,21 @@ export const SwapView = () => {
 									/>
 									<span className="text-[14px] text-[#8e8e93]">
 										{language === "ru"
-											? "РџРѕРёСЃРє РєРѕС‚РёСЂРѕРІРєРёвЂ¦"
-											: "QuotingвЂ¦"}
+											? "Поиск котировки…"
+											: "Quoting…"}
 									</span>
 								</div>
 							) : quoteState === "no_quote" ? (
 								<p className="text-[20px] sm:text-[24px] font-bold text-[#8e8e93] truncate">
 									{language === "ru"
-										? "РќРµС‚ РєРѕС‚РёСЂРѕРІРѕРє"
+										? "Нет котировок"
 										: "No quotes"}
 								</p>
 							) : quoteState === "error" ? (
 								<p className="text-[14px] sm:text-[16px] font-medium text-red-400 truncate">
 									{quoteError ??
 										(language === "ru"
-											? "РћС€РёР±РєР° РєРѕС‚РёСЂРѕРІРєРё"
+											? "Ошибка котировки"
 											: "Quote error")}
 								</p>
 							) : (
@@ -1037,25 +1037,25 @@ export const SwapView = () => {
 				<div className="flex justify-between items-start">
 					<div>
 						<p className="text-[13px] text-[#8e8e93] mb-1">
-							{language === "ru" ? "РљСѓСЂСЃ" : "Rate"}
+							{language === "ru" ? "Курс" : "Rate"}
 						</p>
 						<p className="text-[16px] font-semibold text-white">
-							1 {fromToken.symbol} в‰€{" "}
+							1 {fromToken.symbol} ≈{" "}
 							{exchangeRate > 0
 								? exchangeRate.toLocaleString("en-US", {
 										minimumFractionDigits: 2,
 										maximumFractionDigits: 6,
 									})
-								: "вЂ”"}
+								: "—"}
 							{" "}
 							{toToken.symbol}
 						</p>
 						{estimatedTime !== null && estimatedTime > 0 && (
 							<p className="text-[11px] text-[#8e8e93] mt-1 flex items-center gap-1">
 								<Clock size={10} />
-								{language === "ru" ? "в‰€ " : "в‰€ "}
+								{language === "ru" ? "≈ " : "≈ "}
 								{Math.ceil(estimatedTime / 60)}{" "}
-								{language === "ru" ? "РјРёРЅ" : "min"}
+								{language === "ru" ? "мин" : "min"}
 							</p>
 						)}
 					</div>
@@ -1079,7 +1079,7 @@ export const SwapView = () => {
 						</div>
 						<p className="text-[13px] text-[#8e8e93] flex items-center gap-1 justify-end">
 							<Clock size={11} />
-							{language === "ru" ? "24С‡" : "24h"}
+							{language === "ru" ? "24ч" : "24h"}
 						</p>
 					</div>
 				</div>
@@ -1095,12 +1095,12 @@ export const SwapView = () => {
 						<>
 							<Loader2 size={18} className="animate-spin" />
 							{language === "ru"
-								? "РџРѕР»СѓС‡РµРЅРёРµ РєРѕС‚РёСЂРѕРІРєРёвЂ¦"
-								: "Getting quoteвЂ¦"}
+								? "Получение котировки…"
+								: "Getting quote…"}
 						</>
 					) : (
 						<>
-							{language === "ru" ? "РћР±РјРµРЅСЏС‚СЊ" : "Swap"}
+							{language === "ru" ? "Обменять" : "Swap"}
 						</>
 					)}
 				</button>

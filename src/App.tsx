@@ -59,40 +59,40 @@ const BottomNav = () => {
 			animate={{ y: 0, opacity: 1, scale: 1 }}
 			exit={{ y: 120, opacity: 0, scale: 0.92 }}
 			transition={{ type: "spring", damping: 26, stiffness: 240, mass: 0.9 }}
-			className="absolute left-3 right-3 z-40"
+			className="fixed left-3 right-3 z-40"
 			style={{
 				bottom: "max(14px, env(safe-area-inset-bottom, 14px))",
 			}}
 		>
 			<div
-				className="relative overflow-hidden rounded-[28px] border border-white/[0.12] px-1.5 py-1.5"
+				className="relative overflow-hidden rounded-[40px] border border-white/[0.10] px-2 py-2"
 				style={{
 					background:
-						"linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.035) 35%, rgba(255,255,255,0.025) 100%)",
+						"linear-gradient(180deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.03) 50%, rgba(255,255,255,0.02) 100%)",
 					backdropFilter: "blur(40px) saturate(180%)",
 					WebkitBackdropFilter: "blur(40px) saturate(180%)",
 					boxShadow:
-						"0 12px 40px -8px rgba(0,0,0,0.65), 0 2px 6px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.25)",
+						"0 12px 40px -8px rgba(0,0,0,0.7), 0 2px 6px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.25)",
 				}}
 			>
 				<div
 					aria-hidden
-					className="pointer-events-none absolute inset-x-6 top-0 h-px"
+					className="pointer-events-none absolute inset-x-10 top-0 h-px"
 					style={{
 						background:
-							"linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.45) 50%, transparent 100%)",
+							"linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)",
 					}}
 				/>
 				<div
 					aria-hidden
-					className="pointer-events-none absolute -top-12 left-1/2 h-24 w-3/4 -translate-x-1/2 rounded-full opacity-50"
+					className="pointer-events-none absolute -top-10 left-1/2 h-20 w-2/3 -translate-x-1/2 rounded-full opacity-60"
 					style={{
 						background:
-							"radial-gradient(ellipse at center, rgba(120,170,255,0.18) 0%, transparent 70%)",
-						filter: "blur(12px)",
+							"radial-gradient(ellipse at center, rgba(120,170,255,0.22) 0%, transparent 70%)",
+						filter: "blur(14px)",
 					}}
 				/>
-				<div className="relative grid grid-cols-4 gap-1">
+				<div className="relative grid grid-cols-4 gap-1.5">
 					{items.map(({ id, icon: Icon, label }) => {
 						const active = view === id;
 						return (
@@ -100,41 +100,53 @@ const BottomNav = () => {
 								key={id}
 								type="button"
 								onClick={() => setView(id)}
-								className="relative h-[68px] min-w-0 rounded-[22px] flex flex-col items-center justify-center gap-1 active:scale-[0.94] transition-transform"
+								className="relative h-[60px] min-w-0 rounded-[24px] flex flex-col items-center justify-center gap-1 active:scale-[0.96] transition-transform"
 								aria-label={label}
 							>
 								{active && (
 									<motion.span
-										layoutId="liquidglass-pill"
+										layoutId="active-pill"
 										transition={{
 											type: "spring",
-											damping: 28,
-											stiffness: 320,
+											damping: 30,
+											stiffness: 380,
+											mass: 0.7,
 										}}
-										className="absolute inset-0 rounded-[22px]"
+										className="absolute inset-0 rounded-[24px]"
 										style={{
 											background:
-												"linear-gradient(180deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.08) 100%)",
+												"linear-gradient(180deg, rgba(40,65,120,0.85) 0%, rgba(18,28,58,0.9) 100%)",
 											boxShadow:
-												"inset 0 1px 0 rgba(255,255,255,0.22), 0 4px 14px rgba(47,125,255,0.25)",
-											border: "1px solid rgba(255,255,255,0.16)",
+												"inset 0 1px 0 rgba(255,255,255,0.22), inset 0 -1px 0 rgba(0,0,0,0.35), 0 6px 20px -4px rgba(80,140,255,0.45), 0 0 0 1px rgba(120,170,255,0.35)",
 										}}
-									/>
+									>
+										<span
+											aria-hidden
+											className="pointer-events-none absolute inset-0 rounded-[24px] opacity-70"
+											style={{
+												background:
+													"radial-gradient(ellipse at 50% 110%, rgba(91,155,255,0.4) 0%, transparent 60%)",
+												filter: "blur(6px)",
+											}}
+										/>
+									</motion.span>
 								)}
-								<span className="relative z-10 flex h-7 w-7 items-center justify-center">
+								<span className="relative z-10 flex h-6 w-6 items-center justify-center">
 									<Icon
 										size={22}
-										strokeWidth={active ? 2.6 : 2}
+										strokeWidth={active ? 2.4 : 1.9}
 										className={
 											active
-												? "text-[#5b9bff] drop-shadow-[0_0_8px_rgba(91,155,255,0.55)]"
-												: "text-white/85"
+												? "text-white drop-shadow-[0_0_6px_rgba(255,255,255,0.35)]"
+												: "text-white/75"
 										}
 									/>
 								</span>
 								<span
-									className={`relative z-10 w-full truncate px-1 text-center text-[11.5px] font-semibold leading-none tracking-tight transition-colors ${
-										active ? "text-white" : "text-white/65"
+									className={`relative z-10 w-full truncate px-1 text-center text-[11px] tracking-tight transition-colors ${
+										active
+											? "text-white font-semibold"
+											: "text-white/55 font-medium"
 									}`}
 								>
 									{label}
