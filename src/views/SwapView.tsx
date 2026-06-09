@@ -12,7 +12,7 @@ import {
 	XCircle,
 } from "lucide-react";
 import { useWallet } from "../store/WalletContext";
-import { executeSwap, executeSymbiosisSwap } from "../services/blockchain";
+import { executeSwap, executeSymbiosisSwap, fetchBalances } from "../services/blockchain";
 import {
 	omniston,
 	type Quote,
@@ -148,6 +148,7 @@ export const SwapView = () => {
 		setView,
 		wallets,
 		balances,
+		setBalances,
 		rates,
 		changes,
 		language,
@@ -186,6 +187,9 @@ export const SwapView = () => {
 
 	const cancelQuoteRef = useRef<{ cancelled: boolean }>({ cancelled: false });
 	const unsubscribeTrackRef = useRef<(() => void) | null>(null);
+	const walletId = `${wallets?.ton?.address}_${wallets?.eth?.address}_${wallets?.sol?.address}`;
+	const langRef = useRef(language);
+	langRef.current = language;
 
 	const fromId = ADDRESS_TO_ID[fromToken.address] ?? fromToken.address;
 	const toId = ADDRESS_TO_ID[toToken.address] ?? toToken.address;
@@ -202,18 +206,30 @@ export const SwapView = () => {
 
 	const askUnits = quote?.ask_units ?? "0";
 	const symbOutAmount = symbQuote?.tokenAmountOut?.amount ?? "0";
-	const expectedToAmount =
-		quote
-			? fromUnits(askUnits, toToken.decimals ?? 6)
-			: symbQuote
-				? fromUnits(symbOutAmount, toToken.decimals ?? 6)
-				: 0;
-	const usdIn = Number(fromAmount) * fromRate;
-	const usdOut = expectedToAmount * toRate;
-	const exchangeRate =
-		Number(fromAmount) > 0 && expectedToAmount > 0
-			? expectedToAmount / Number(fromAmount)
-			: 0;
+	const expectedToAmount = useMemo(
+		() =>
+			quote
+				? fromUnits(askUnits, toToken.decimals ?? 6)
+				: symbQuote
+					? fromUnits(symbOutAmount, toToken.decimals ?? 6)
+					: 0,
+		[quote, symbQuote, askUnits, symbOutAmount, toToken.decimals]
+	);
+	const usdIn = useMemo(
+		() => Number(fromAmount) * fromRate,
+		[fromAmount, fromRate]
+	);
+	const usdOut = useMemo(
+		() => expectedToAmount * toRate,
+		[expectedToAmount, toRate]
+	);
+	const exchangeRate = useMemo(
+		() =>
+			Number(fromAmount) > 0 && expectedToAmount > 0
+				? expectedToAmount / Number(fromAmount)
+				: 0,
+		[fromAmount, expectedToAmount]
+	);
 
 	const changePercent = changes[fromId] || 0;
 	const isPositive = changePercent >= 0;
@@ -359,7 +375,7 @@ export const SwapView = () => {
 					if (!sourceWallet || !destWallet) {
 						setQuoteState("error");
 						setQuoteError(
-							language === "ru"
+							langRef.current === "ru"
 								? "Кошелёк для этой сети не найден"
 								: "Wallet for this network not found"
 						);
@@ -397,7 +413,7 @@ export const SwapView = () => {
 				const msg = e?.message ?? "Quote failed";
 				setQuoteError(
 					msg.includes("Symbiosis")
-						? language === "ru"
+						? langRef.current === "ru"
 							? "Маршрут не найден для этой пары"
 							: "No route for this pair"
 						: msg
@@ -407,13 +423,13 @@ export const SwapView = () => {
 		}, 500);
 
 		return () => clearTimeout(timer);
+	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [
 		fromAmount,
 		fromToken,
 		toToken,
 		bidUnits,
-		wallets,
-		language,
+		walletId,
 	]);
 
 	const canContinue =
@@ -480,6 +496,7 @@ export const SwapView = () => {
 										? "Обмен завершён"
 										: "Swap completed"
 								);
+								fetchBalances(wallets, networkMode).then(setBalances);
 							} else if (result === 3) {
 								setSubmitError(
 									language === "ru"
@@ -512,7 +529,7 @@ export const SwapView = () => {
 						value: symbQuote.tx.value ?? "0x0",
 						chainId: symbQuote.tx.chainId,
 						approveTo: symbQuote.approveTo,
-						approveData: undefined,
+						approveData: symbQuote.approveTx?.data,
 						fromTokenAddress: fromToken.symbiosisAddress!,
 					},
 					sourceChain,
@@ -524,10 +541,11 @@ export const SwapView = () => {
 				setTrackStatus("transferring");
 
 				const pollInterval = setInterval(async () => {
-					const status = await getSymbiosisStatus(
-						fromToken.chainId!,
-						txHash
-					);
+					try {
+						const status = await getSymbiosisStatus(
+							fromToken.chainId!,
+							txHash
+						);
 					if (status?.status === "success") {
 						clearInterval(pollInterval);
 						setSwapResult({
@@ -540,14 +558,18 @@ export const SwapView = () => {
 								? "Обмен завершён"
 								: "Swap completed"
 						);
-					} else if (status?.status === "refund" || status?.status === "fail") {
+						fetchBalances(wallets, networkMode).then(setBalances);
+						} else if (status?.status === "refund" || status?.status === "fail") {
+							clearInterval(pollInterval);
+							setSubmitError(
+								language === "ru"
+									? "Транзакция не прошла, средства можно вернуть"
+									: "Transaction failed, refund available"
+							);
+							setStage("error");
+						}
+					} catch {
 						clearInterval(pollInterval);
-						setSubmitError(
-							language === "ru"
-								? "Транзакция не прошла, средства можно вернуть"
-								: "Transaction failed, refund available"
-						);
-						setStage("error");
 					}
 				}, 8000);
 				unsubscribeTrackRef.current = () => clearInterval(pollInterval);

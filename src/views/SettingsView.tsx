@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { motion } from "framer-motion";
 import {
 	ChevronLeft,
@@ -44,25 +44,28 @@ export const SettingsView = () => {
 		null | { ok: boolean; msg: string; provider?: string }
 	>(null);
 
-	const handleLangChange = () => {
+	const handleLangChange = useCallback(() => {
 		setLanguage(language === "en" ? "ru" : "en");
-	};
+	}, [language, setLanguage]);
 
-	const handleNetworkChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-		setNetworkMode(e.target.value as any);
-		showToast(`Network switched to ${e.target.value.toUpperCase()}`);
-	};
+	const handleNetworkChange = useCallback(
+		(e: React.ChangeEvent<HTMLSelectElement>) => {
+			setNetworkMode(e.target.value as any);
+			showToast(`Network switched to ${e.target.value.toUpperCase()}`);
+		},
+		[setNetworkMode, showToast]
+	);
 
-	const handleViewSeed = () => {
+	const handleViewSeed = useCallback(() => {
 		setView("pin-confirm-seed");
-	};
+	}, [setView]);
 
-	const handleBack = () => {
+	const handleBack = useCallback(() => {
 		setSeedRevealed(false);
 		setView("main");
-	};
+	}, [setSeedRevealed, setView]);
 
-	const handleWipeWallet = async () => {
+	const handleWipeWallet = useCallback(async () => {
 		if (
 			confirm(
 				"Are you absolutely sure you want to delete this wallet? Your cloud data will be wiped."
@@ -72,9 +75,9 @@ export const SettingsView = () => {
 			localStorage.clear();
 			window.location.reload();
 		}
-	};
+	}, []);
 
-	const handleSaveKey = () => {
+	const handleSaveKey = useCallback(() => {
 		const v = keyDraft.trim();
 		if (!v) {
 			showToast("Enter a key or use Clear");
@@ -94,21 +97,21 @@ export const SettingsView = () => {
 		}
 		setKeyDraft("");
 		setTestResult(null);
-	};
+	}, [keyDraft, setGroqKey, setOpenrouterKey, showToast]);
 
-	const handleClearGroq = () => {
+	const handleClearGroq = useCallback(() => {
 		setGroqKey(null);
 		setTestResult(null);
 		showToast("Groq key cleared");
-	};
+	}, [setGroqKey, showToast]);
 
-	const handleClearOpenRouter = () => {
+	const handleClearOpenRouter = useCallback(() => {
 		setOpenrouterKey(null);
 		setTestResult(null);
 		showToast("OpenRouter key cleared");
-	};
+	}, [setOpenrouterKey, showToast]);
 
-	const handleTestPrimary = async () => {
+	const handleTestPrimary = useCallback(async () => {
 		const target = groqKey || keyDraft.trim();
 		if (!target) {
 			setTestResult({ ok: false, msg: "No Groq key configured" });
@@ -136,9 +139,9 @@ export const SettingsView = () => {
 		} finally {
 			setTesting(false);
 		}
-	};
+	}, [groqKey, openrouterKey, keyDraft]);
 
-	const handleTestDraft = async () => {
+	const handleTestDraft = useCallback(async () => {
 		const v = keyDraft.trim();
 		if (!v) {
 			setTestResult({ ok: false, msg: "Enter a key first" });
@@ -173,7 +176,7 @@ export const SettingsView = () => {
 		} finally {
 			setTesting(false);
 		}
-	};
+	}, [keyDraft]);
 
 	const groqPreview = groqKey
 		? `${groqKey.slice(0, 6)}…${groqKey.slice(-4)}`

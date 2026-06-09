@@ -57,6 +57,12 @@ export interface SymbiosisSwapResponse {
 		priceUsd: number;
 	};
 	approveTo: string;
+	approveTx?: {
+		to: string;
+		data: string;
+		value?: string;
+		chainId: number;
+	};
 	type: "evm" | "tron" | "ton" | "solana" | "btc";
 	tx: {
 		chainId: number;
@@ -143,7 +149,7 @@ export async function getSymbiosisStatus(
 ): Promise<SymbiosisStatusResponse | null> {
 	try {
 		return await callApi<SymbiosisStatusResponse>(
-			`/v2/tx/${chainId}/${txHash}`,
+			`/v2/tx/${chainId}/${txHash}?partnerId=${SYMBIOSIS_PARTNER_ID}`,
 			"GET"
 		);
 	} catch {

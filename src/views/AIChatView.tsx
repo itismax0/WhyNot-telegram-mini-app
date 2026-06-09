@@ -363,6 +363,7 @@ export const AIChatView = () => {
 	const [rerouteStep, setRerouteStep] = useState(0);
 	const scrollRef = useRef<HTMLDivElement | null>(null);
 	const abortRef = useRef<AbortController | null>(null);
+	const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	const suggestions = language === "ru" ? SUGGESTIONS_RU : SUGGESTIONS_EN;
 
@@ -373,11 +374,24 @@ export const AIChatView = () => {
 	}, []);
 
 	useEffect(() => {
-		saveHistory(turns);
+		if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+		saveTimerRef.current = setTimeout(() => {
+			saveHistory(turns);
+			saveTimerRef.current = null;
+		}, 500);
 		if (scrollRef.current) {
 			scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
 		}
 	}, [turns]);
+
+	useEffect(() => {
+		return () => {
+			if (saveTimerRef.current) {
+				clearTimeout(saveTimerRef.current);
+				saveTimerRef.current = null;
+			}
+		};
+	}, []);
 
 	const send = async (text: string) => {
 		const trimmed = text.trim();
@@ -499,7 +513,17 @@ export const AIChatView = () => {
 					const parsed = parseAndExtractActions(finalResult.content);
 					finalText = parsed.cleanText;
 					if (parsed.actions.length) {
-						finalText = finalText;
+						currentTurns = [
+							...currentTurns,
+							{
+								id: rid(),
+								role: "assistant",
+								content: finalResult.content,
+								model: finalResult.model,
+								timestamp: Date.now(),
+							},
+						];
+						continue;
 					}
 				}
 				break;

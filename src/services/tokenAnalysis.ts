@@ -145,6 +145,9 @@ export async function analyzeToken(
 	query: string
 ): Promise<TokenAnalysisResult> {
 	const trimmed = query.trim();
+	const cacheKey = `ai_analyze_${trimmed.toLowerCase()}`;
+	const cached = getCache<TokenAnalysisResult>(cacheKey);
+	if (cached) return cached;
 	if (!trimmed) {
 		return {
 			query: "",
@@ -180,48 +183,50 @@ export async function analyzeToken(
 			};
 		}
 
-		const candidates: TokenCandidate[] = [];
-		for (const c of top) {
-			const details = await fetchCoinDetails(c.id);
-			const md = details?.market_data;
-			const desc = translateDescription(details?.description);
-			const sym: string = (c.symbol || details?.symbol || "").toUpperCase();
-			const dexPairs = await fetchDexScreener(sym || c.id);
-			const topPair = bestDexPair(dexPairs);
-			candidates.push({
-				coingeckoId: c.id,
-				symbol: c.symbol,
-				name: c.name,
-				marketCapRank: c.market_cap_rank ?? null,
-				thumb: c.thumb || details?.image?.thumb,
-				priceUsd: md?.current_price?.usd,
-				change24h: md?.price_change_percentage_24h,
-				marketCap: md?.market_cap?.usd,
-				totalVolume24h: md?.total_volume?.usd,
-				circulatingSupply: md?.circulating_supply,
-				totalSupply: md?.total_supply,
-				ath: md?.ath?.usd,
-				atl: md?.atl?.usd,
-				descriptionEn: desc.en,
-				descriptionRu: desc.ru,
-				homepage: details?.links?.homepage?.[0],
-				dexTopPair: topPair
-					? {
-							chainId: topPair.chainId,
-							dexId: topPair.dexId,
-							url: topPair.url,
-							priceUsd: topPair.priceUsd,
-							liquidityUsd: topPair.liquidity?.usd,
-							volume24h: topPair.volume?.h24,
-							fdv: topPair.fdv,
-							pairAddress: topPair.pairAddress,
-							baseToken: topPair.baseToken,
-							quoteToken: topPair.quoteToken,
-						}
-					: undefined,
-				dexPairCount: dexPairs.length,
-			});
-		}
+		const candidates: TokenCandidate[] = await Promise.all(
+			top.map(async (c) => {
+				const [details, dexPairs] = await Promise.all([
+					fetchCoinDetails(c.id),
+					fetchDexScreener((c.symbol || c.id).toUpperCase()),
+				]);
+				const md = details?.market_data;
+				const desc = translateDescription(details?.description);
+				const topPair = bestDexPair(dexPairs);
+				return {
+					coingeckoId: c.id,
+					symbol: c.symbol,
+					name: c.name,
+					marketCapRank: c.market_cap_rank ?? null,
+					thumb: c.thumb || details?.image?.thumb,
+					priceUsd: md?.current_price?.usd,
+					change24h: md?.price_change_percentage_24h,
+					marketCap: md?.market_cap?.usd,
+					totalVolume24h: md?.total_volume?.usd,
+					circulatingSupply: md?.circulating_supply,
+					totalSupply: md?.total_supply,
+					ath: md?.ath?.usd,
+					atl: md?.atl?.usd,
+					descriptionEn: desc.en,
+					descriptionRu: desc.ru,
+					homepage: details?.links?.homepage?.[0],
+					dexTopPair: topPair
+						? {
+								chainId: topPair.chainId,
+								dexId: topPair.dexId,
+								url: topPair.url,
+								priceUsd: topPair.priceUsd,
+								liquidityUsd: topPair.liquidity?.usd,
+								volume24h: topPair.volume?.h24,
+								fdv: topPair.fdv,
+								pairAddress: topPair.pairAddress,
+								baseToken: topPair.baseToken,
+								quoteToken: topPair.quoteToken,
+							}
+						: undefined,
+					dexPairCount: dexPairs.length,
+				};
+			})
+		);
 
 		candidates.sort((a, b) => {
 			const ra = a.marketCapRank ?? 99999;
@@ -230,20 +235,24 @@ export async function analyzeToken(
 		});
 
 		const bestMatch = candidates[0] || null;
-		return {
+		const result: TokenAnalysisResult = {
 			query: trimmed,
 			resolvedAt: Date.now(),
 			candidates,
 			bestMatch,
 		};
+		setCache(cacheKey, result, 5 * 60_000);
+		return result;
 	} catch (e: any) {
-		return {
+		const result: TokenAnalysisResult = {
 			query: trimmed,
 			resolvedAt: Date.now(),
 			candidates: [],
 			bestMatch: null,
 			error: e?.message || "Unknown error",
 		};
+		setCache(cacheKey, result, 60_000);
+		return result;
 	}
 }
 

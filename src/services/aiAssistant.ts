@@ -8,9 +8,8 @@ import {
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
-const GROQ_ENV_KEY = (import.meta as any)?.env?.VITE_GROQ_KEY || "";
-const OPENROUTER_ENV_KEY =
-	(import.meta as any)?.env?.VITE_OPENROUTER_KEY || "";
+const GROQ_ENV_KEY = "";
+const OPENROUTER_ENV_KEY = "";
 
 export const GROQ_DEFAULT_KEY = GROQ_ENV_KEY;
 export const OPENROUTER_DEFAULT_KEY = OPENROUTER_ENV_KEY;
@@ -119,7 +118,8 @@ async function callProvider(
 	let lastError: unknown = null;
 	const providerLabel = provider === "groq" ? "Groq" : "OpenRouter";
 
-	for (const model of config.models) {
+	for (let i = 0; i < config.models.length; i++) {
+		const model = config.models[i];
 		try {
 			const res = await fetch(config.url, {
 				method: "POST",
@@ -136,6 +136,10 @@ async function callProvider(
 
 			if (!res.ok) {
 				const text = await res.text().catch(() => "");
+				const isRateLimit = res.status === 429;
+				if (isRateLimit && i < config.models.length - 1) {
+					await new Promise((r) => setTimeout(r, 250));
+				}
 				throw new Error(
 					`${providerLabel} ${res.status} on ${model}: ${text.substring(0, 200)}`
 				);
@@ -188,8 +192,19 @@ export async function aiChat({
 				"NO_API_KEY: API key must start with `gsk_` (Groq) or `sk-` (OpenRouter)."
 			);
 		}
-		if (provider === "groq") resolvedGroq = trimmed;
-		else resolvedOpenRouter = trimmed;
+		if (provider === "groq") {
+			resolvedGroq = trimmed;
+			resolvedOpenRouter =
+				openrouterKey && openrouterKey.trim()
+					? openrouterKey.trim()
+					: OPENROUTER_DEFAULT_KEY;
+		} else {
+			resolvedOpenRouter = trimmed;
+			resolvedGroq =
+				groqKey && groqKey.trim()
+					? groqKey.trim()
+					: GROQ_DEFAULT_KEY;
+		}
 	} else {
 		resolvedGroq = groqKey && groqKey.trim() ? groqKey.trim() : GROQ_DEFAULT_KEY;
 		resolvedOpenRouter =

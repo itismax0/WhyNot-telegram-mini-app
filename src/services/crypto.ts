@@ -24,6 +24,27 @@ async function getDerivationKey(
 	);
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+	let binary = "";
+	const chunk = 0x8000;
+	for (let i = 0; i < bytes.length; i += chunk) {
+		binary += String.fromCharCode.apply(
+			null,
+			Array.from(bytes.subarray(i, i + chunk))
+		);
+	}
+	return btoa(binary);
+}
+
+function base64ToBytes(b64: string): Uint8Array {
+	const binary = atob(b64);
+	const out = new Uint8Array(binary.length);
+	for (let i = 0; i < binary.length; i++) {
+		out[i] = binary.charCodeAt(i);
+	}
+	return out;
+}
+
 export async function encryptData(text: string, pin: string): Promise<string> {
 	const salt = window.crypto.getRandomValues(new Uint8Array(16));
 	const iv = window.crypto.getRandomValues(new Uint8Array(12));
@@ -41,18 +62,14 @@ export async function encryptData(text: string, pin: string): Promise<string> {
 	combined.set(salt, 0);
 	combined.set(iv, salt.length);
 	combined.set(new Uint8Array(encryptedContent), salt.length + iv.length);
-	return btoa(String.fromCharCode(...combined));
+	return bytesToBase64(combined);
 }
 
 export async function decryptData(
 	encryptedBase64: string,
 	pin: string
 ): Promise<string> {
-	const combined = new Uint8Array(
-		atob(encryptedBase64)
-			.split("")
-			.map((c) => c.charCodeAt(0))
-	);
+	const combined = base64ToBytes(encryptedBase64);
 	const salt = combined.slice(0, 16);
 	const iv = combined.slice(16, 28);
 	const data = combined.slice(28);

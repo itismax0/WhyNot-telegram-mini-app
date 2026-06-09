@@ -1,4 +1,11 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, {
+	createContext,
+	useContext,
+	useState,
+	useEffect,
+	useCallback,
+	useMemo,
+} from "react";
 
 type ViewState =
 	| "loading"
@@ -28,12 +35,19 @@ export const getCloudItem = (key: string): Promise<string | null> => {
 			return;
 		}
 		const timeout = setTimeout(() => {
+			console.warn(`[CloudStorage] getItem("${key}") timeout, falling back to localStorage`);
 			resolve(localStorage.getItem(key));
 		}, 1000);
 		webApp.CloudStorage.getItem(key, (err: any, value: string) => {
 			clearTimeout(timeout);
-			if (err || !value) resolve(localStorage.getItem(key));
-			else resolve(value);
+			if (err) {
+				console.warn(`[CloudStorage] getItem("${key}") error:`, err);
+				resolve(localStorage.getItem(key));
+			} else if (!value) {
+				resolve(localStorage.getItem(key));
+			} else {
+				resolve(value);
+			}
 		});
 	});
 };
@@ -54,9 +68,25 @@ export const setCloudItem = (key: string, value: string): Promise<void> => {
 			resolve();
 			return;
 		}
-		const timeout = setTimeout(() => resolve(), 1000);
-		webApp.CloudStorage.setItem(key, value, () => {
+		const timeout = setTimeout(() => {
+			console.warn(`[CloudStorage] setItem("${key}") timeout`);
+			try {
+				localStorage.setItem("cloud_unverified", "1");
+			} catch {
+				/* localStorage quota / disabled */
+			}
+			resolve();
+		}, 1000);
+		webApp.CloudStorage.setItem(key, value, (err: any) => {
 			clearTimeout(timeout);
+			if (err) {
+				console.warn(`[CloudStorage] setItem("${key}") error:`, err);
+				try {
+					localStorage.setItem("cloud_unverified", "1");
+				} catch {
+					/* localStorage quota / disabled */
+				}
+			}
 			resolve();
 		});
 	});
@@ -69,9 +99,15 @@ export const removeCloudItem = (key: string): Promise<void> => {
 			resolve();
 			return;
 		}
-		const timeout = setTimeout(() => resolve(), 1000);
-		webApp.CloudStorage.removeItem(key, () => {
+		const timeout = setTimeout(() => {
+			console.warn(`[CloudStorage] removeItem("${key}") timeout`);
+			resolve();
+		}, 1000);
+		webApp.CloudStorage.removeItem(key, (err: any) => {
 			clearTimeout(timeout);
+			if (err) {
+				console.warn(`[CloudStorage] removeItem("${key}") error:`, err);
+			}
 			resolve();
 		});
 	});
@@ -233,10 +269,14 @@ interface WalletContextType {
 	setOpenrouterKey: (k: string | null) => void;
 }
 
-const WalletContext = createContext<WalletContextType>({} as WalletContextType);
+type WalletDataContextType = Omit<WalletContextType, "setView" | "setWallets" | "setBalances" | "setRates" | "setChanges" | "setMnemonic" | "showToast" | "setNetworkMode" | "setLanguage" | "setTempPin" | "setSeedRevealed" | "setSelectedAsset" | "setGroqKey" | "setOpenrouterKey">;
+type WalletActionsContextType = Pick<WalletContextType, "setView" | "setWallets" | "setBalances" | "setRates" | "setChanges" | "setMnemonic" | "showToast" | "setNetworkMode" | "setLanguage" | "setTempPin" | "setSeedRevealed" | "setSelectedAsset" | "setGroqKey" | "setOpenrouterKey">;
+
+const WalletDataContext = createContext<WalletDataContextType>({} as WalletDataContextType);
+const WalletActionsContext = createContext<WalletActionsContextType>({} as WalletActionsContextType);
 
 export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
-	const [view, setView] = useState<ViewState>("loading");
+	const [view, setViewState] = useState<ViewState>("loading");
 	const [wallets, setWallets] = useState<any>(null);
 	const [balances, setBalances] = useState<Record<string, number>>({});
 	const [rates, setRates] = useState<Record<string, number>>({});
@@ -262,17 +302,17 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 		if (savedOr) setOpenrouterKeyState(savedOr);
 	}, []);
 
-	const setLanguage = (l: Language) => {
+	const setLanguage = useCallback((l: Language) => {
 		setLanguageState(l);
 		localStorage.setItem("wallet_lang", l);
-	};
+	}, []);
 
-	const setNetworkMode = (m: NetworkMode) => {
+	const setNetworkMode = useCallback((m: NetworkMode) => {
 		setNetworkModeState(m);
 		localStorage.setItem("wallet_net", m);
-	};
+	}, []);
 
-	const setGroqKey = (k: string | null) => {
+	const setGroqKey = useCallback((k: string | null) => {
 		if (k && k.trim()) {
 			setGroqKeyState(k.trim());
 			localStorage.setItem("whynot_groq_key", k.trim());
@@ -280,9 +320,9 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 			setGroqKeyState(null);
 			localStorage.removeItem("whynot_groq_key");
 		}
-	};
+	}, []);
 
-	const setOpenrouterKey = (k: string | null) => {
+	const setOpenrouterKey = useCallback((k: string | null) => {
 		if (k && k.trim()) {
 			setOpenrouterKeyState(k.trim());
 			localStorage.setItem("whynot_openrouter_key", k.trim());
@@ -290,54 +330,76 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 			setOpenrouterKeyState(null);
 			localStorage.removeItem("whynot_openrouter_key");
 		}
-	};
+	}, []);
 
-	const showToast = (msg: string) => {
+	const showToast = useCallback((msg: string) => {
 		setToast(msg);
 		setTimeout(() => setToast(null), 3000);
-	};
+	}, []);
 
-	const t = (key: string) => {
-		return translations[language][key] || key;
-	};
+	const t = useCallback(
+		(key: string) => {
+			return translations[language][key] || key;
+		},
+		[language]
+	);
+
+	const setView = useCallback((v: ViewState) => {
+		setViewState(v);
+	}, []);
+
+	const dataValue = useMemo<WalletDataContextType>(
+		() => ({
+			view,
+			wallets,
+			balances,
+			rates,
+			changes,
+			mnemonic,
+			toast,
+			networkMode,
+			language,
+			t,
+			tempPin,
+			seedRevealed,
+			selectedAsset,
+			groqKey,
+			openrouterKey,
+		}),
+		[view, wallets, balances, rates, changes, mnemonic, toast, networkMode, language, t, tempPin, seedRevealed, selectedAsset, groqKey, openrouterKey]
+	);
+
+	const actionsValue = useMemo<WalletActionsContextType>(
+		() => ({
+			setView,
+			setWallets,
+			setBalances,
+			setRates,
+			setChanges,
+			setMnemonic,
+			showToast,
+			setNetworkMode,
+			setLanguage,
+			setTempPin,
+			setSeedRevealed,
+			setSelectedAsset,
+			setGroqKey,
+			setOpenrouterKey,
+		}),
+		[setView, setWallets, setBalances, setRates, setChanges, setMnemonic, showToast, setNetworkMode, setLanguage, setTempPin, setSeedRevealed, setSelectedAsset, setGroqKey, setOpenrouterKey]
+	);
 
 	return (
-		<WalletContext.Provider
-			value={{
-				view,
-				setView,
-				wallets,
-				setWallets,
-				balances,
-				setBalances,
-				rates,
-				setRates,
-				changes,
-				setChanges,
-				mnemonic,
-				setMnemonic,
-				toast,
-				showToast,
-				networkMode,
-				setNetworkMode,
-				language,
-				setLanguage,
-				t,
-				tempPin,
-				setTempPin,
-				seedRevealed,
-				setSeedRevealed,
-				selectedAsset,
-				setSelectedAsset,
-				groqKey,
-				setGroqKey,
-				openrouterKey,
-				setOpenrouterKey,
-			}}
-		>
-			{children}
-		</WalletContext.Provider>
+		<WalletActionsContext.Provider value={actionsValue}>
+			<WalletDataContext.Provider value={dataValue}>
+				{children}
+			</WalletDataContext.Provider>
+		</WalletActionsContext.Provider>
 	);
 };
 
-export const useWallet = () => useContext(WalletContext);
+export const useWallet = () => {
+	const data = useContext(WalletDataContext);
+	const actions = useContext(WalletActionsContext);
+	return { ...data, ...actions };
+};

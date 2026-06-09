@@ -46,7 +46,7 @@ interface WalletTransaction {
 
 const copyTextToClipboard = (text: string): boolean => {
 	if (navigator.clipboard && window.isSecureContext) {
-		navigator.clipboard.writeText(text);
+		navigator.clipboard.writeText(text).catch(() => {});
 		return true;
 	}
 	const textArea = document.createElement("textarea");
@@ -58,14 +58,14 @@ const copyTextToClipboard = (text: string): boolean => {
 	document.body.appendChild(textArea);
 	textArea.focus();
 	textArea.select();
+	let successful = false;
 	try {
-		const successful = document.execCommand("copy");
-		document.body.removeChild(textArea);
-		return successful;
-	} catch (err) {
-		document.body.removeChild(textArea);
-		return false;
+		successful = document.execCommand("copy");
+	} catch {
+		successful = false;
 	}
+	document.body.removeChild(textArea);
+	return successful;
 };
 
 const Combobox = ({
@@ -88,6 +88,8 @@ const Combobox = ({
 					<img
 						src={value.icon}
 						alt={value.symbol}
+						loading="lazy"
+						decoding="async"
 						className="w-8 h-8 rounded-full bg-[#222] object-contain p-1"
 					/>
 					<span className="font-semibold text-sm">
@@ -120,6 +122,8 @@ const Combobox = ({
 								<img
 									src={opt.icon}
 									alt={opt.symbol}
+									loading="lazy"
+									decoding="async"
 									className="w-8 h-8 rounded-full bg-[#222] object-contain p-1"
 								/>
 								<div>
@@ -152,10 +156,19 @@ export const MainView = () => {
 		language,
 	} = useWallet();
 	const [hide, setHide] = useState(false);
+	const lastNetworkRef = useRef<string | null>(null);
 
 	useEffect(() => {
-		fetchBalances(wallets, networkMode).then(setBalances);
-	}, []);
+		if (!wallets?.ton?.address) return;
+		const netKey = `${networkMode}_${wallets.ton.address}`;
+		if (lastNetworkRef.current !== netKey) {
+			lastNetworkRef.current = netKey;
+			fetchBalances(wallets, networkMode).then(setBalances);
+		} else if (Object.keys(balances).length === 0) {
+			fetchBalances(wallets, networkMode).then(setBalances);
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [wallets?.ton?.address, networkMode]);
 
 	const totalUsd = ASSETS.reduce(
 		(acc, a) => acc + (balances[a.id] || 0) * (rates[a.id] || 0),
@@ -248,12 +261,14 @@ export const MainView = () => {
 									setView("token_detail");
 								}}
 							>
-								<div className="flex items-center gap-4">
-									<img
-										src={asset.icon}
-										alt={asset.symbol}
-										className="w-12 h-12 rounded-full bg-[#111] object-contain p-2 border border-[#1a1a1a]"
-									/>
+							<div className="flex items-center gap-4">
+								<img
+									src={asset.icon}
+									alt={asset.symbol}
+									loading="lazy"
+									decoding="async"
+									className="w-12 h-12 rounded-full bg-[#111] object-contain p-2 border border-[#1a1a1a]"
+								/>
 									<div>
 										<h4 className="font-semibold text-base mb-0.5">
 											{asset.name}
@@ -311,7 +326,7 @@ export const MainView = () => {
 export const ReceiveView = () => {
 	const { setView, wallets, showToast, t } = useWallet();
 	const [asset, setAsset] = useState(ASSETS[0]);
-	const address = wallets[asset.id]?.address || wallets.ton.address;
+	const address = wallets[asset.id]?.address || "";
 
 	const handleCopy = () => {
 		const success = copyTextToClipboard(address);
@@ -824,8 +839,11 @@ export const SendView = () => {
 	const [addressError, setAddressError] = useState<string | null>(null);
 	const [stage, setStage] = useState<"form" | "confirm" | "success">("form");
 	const latestCleanRef = useRef("");
+	const langRef = useRef(language);
+	langRef.current = language;
 
 	useEffect(() => {
+		const lang = langRef.current;
 		const clean = address.trim();
 		latestCleanRef.current = clean;
 		if (!clean || clean.length < 3) {
@@ -836,7 +854,7 @@ export const SendView = () => {
 		if (!isValidAddressOrUsername(clean)) {
 			setRepResult(null);
 			setAddressError(
-				language === "ru"
+				lang === "ru"
 					? "Неверный формат адреса или юзернейма"
 					: "Invalid address or username format"
 			);
@@ -853,10 +871,11 @@ export const SendView = () => {
 			} catch (e: any) {
 				if (latestCleanRef.current !== clean) return;
 				setRepResult(null);
+				setAddressError(null);
 				const errMsg = e.message || "";
 				if (errMsg.includes("registry") || errMsg.includes("not found")) {
 					setAddressError(
-						language === "ru"
+						lang === "ru"
 							? "Пользователь не зарегистрирован в реестре WhyNot"
 							: "User is not registered in WhyNot registry"
 					);
@@ -870,7 +889,7 @@ export const SendView = () => {
 			}
 		}, 750);
 		return () => clearTimeout(timer);
-	}, [address, networkMode, language]);
+	}, [address, networkMode]);
 
 	const handleSend = async () => {
 		setLoading(true);

@@ -170,11 +170,11 @@ export function searchAssets(
 export function isValidJettonAddress(input: string): boolean {
 	const clean = input.trim();
 	if (!clean) return false;
-	if (clean.startsWith("EQ") || clean.startsWith("UQ")) {
-		return clean.length === 48;
-	}
-	if (clean.startsWith("0x")) {
-		return clean.length === 66;
-	}
-	return /^[A-Za-z0-9_-]{46,50}$/.test(clean);
+	// Friendly TON address (any prefix)
+	if (/^[A-Za-z0-9_-]{48}$/.test(clean)) return true;
+	// Raw TON address (workchain:hex)
+	if (/^(-1|0):[a-fA-F0-9]{64}$/.test(clean)) return true;
+	// EVM address (0x + 40 hex)
+	if (/^0x[a-fA-F0-9]{40}$/.test(clean)) return true;
+	return false;
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { ChevronLeft, FolderOpen, Import } from "lucide-react";
 import { mnemonicNew, mnemonicValidate } from "@ton/crypto";
@@ -229,9 +229,11 @@ export const PinManager = () => {
 		if (pin.length === 4) processPin();
 	}, [pin]);
 
-	const processPin = async () => {
-		setTimeout(async () => {
-			if (view === "pin-create") {
+	const processPin = useCallback(async () => {
+		setTimeout(
+			() =>
+				(async () => {
+					if (view === "pin-create") {
 				setTempPin(pin);
 				setPin("");
 				setView("pin-repeat");
@@ -244,12 +246,12 @@ export const PinManager = () => {
 					setView("pin-create");
 				}
 			} else if (view === "pin-enter") {
-				setView("loading");
-				try {
-					const encrypted = await getCloudItem("wallet_data");
-					const decryptedStr = await decryptData(encrypted!, pin);
-					const seed = decryptedStr.split(" ");
-					setMnemonic(seed);
+			setView("loading");
+			try {
+				const encrypted = await getCloudItem("wallet_data");
+				const decryptedStr = await decryptData(encrypted!, pin);
+				const seed = decryptedStr.split(/\s+/).filter(Boolean);
+				setMnemonic(seed);
 					const generated = await generateWallets(seed);
 					setWallets(generated);
 
@@ -282,8 +284,10 @@ export const PinManager = () => {
 					setPin("");
 				}
 			}
-		}, 200);
-	};
+				})().catch((e) => console.warn("processPin error:", e)),
+			200,
+		);
+	}, [view, setView, tempPin, setTempPin, showToast, pin, setMnemonic, setWallets, setBalances, networkMode, setSeedRevealed]);
 
 	const title =
 		view === "pin-create"

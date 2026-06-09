@@ -1,4 +1,5 @@
 const CACHE_PREFIX = "w_cache_";
+const inflight = new Map<string, Promise<any>>();
 
 export function getCache<T>(key: string): T | null {
 	try {
@@ -19,7 +20,9 @@ export function setCache<T>(key: string, data: T, ttlMs: number): void {
 	try {
 		const entry = { data, ts: Date.now(), ttl: ttlMs };
 		localStorage.setItem(CACHE_PREFIX + key, JSON.stringify(entry));
-	} catch {}
+	} catch {
+		/* localStorage quota / disabled */
+	}
 }
 
 export async function cachedFetch<T>(
@@ -29,7 +32,24 @@ export async function cachedFetch<T>(
 ): Promise<T> {
 	const cached = getCache<T>(key);
 	if (cached !== null) return cached;
-	const data = await fetcher();
-	setCache(key, data, ttlMs);
-	return data;
+	const existing = inflight.get(key);
+	if (existing) return existing as Promise<T>;
+	const promise = fetcher().then((data) => {
+		setCache(key, data, ttlMs);
+		inflight.delete(key);
+		return data;
+	}).catch((err) => {
+		inflight.delete(key);
+		throw err;
+	});
+	inflight.set(key, promise);
+	return promise;
+}
+
+export function removeCache(key: string): void {
+	try {
+		localStorage.removeItem(CACHE_PREFIX + key);
+	} catch {
+		/* localStorage quota / disabled */
+	}
 }

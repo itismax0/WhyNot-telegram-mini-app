@@ -64,34 +64,7 @@ const BottomNav = () => {
 				bottom: "max(14px, env(safe-area-inset-bottom, 14px))",
 			}}
 		>
-			<div
-				className="relative overflow-hidden rounded-[40px] border border-white/[0.10] px-2 py-2"
-				style={{
-					background:
-						"linear-gradient(180deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.03) 50%, rgba(255,255,255,0.02) 100%)",
-					backdropFilter: "blur(40px) saturate(180%)",
-					WebkitBackdropFilter: "blur(40px) saturate(180%)",
-					boxShadow:
-						"0 12px 40px -8px rgba(0,0,0,0.7), 0 2px 6px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.25)",
-				}}
-			>
-				<div
-					aria-hidden
-					className="pointer-events-none absolute inset-x-10 top-0 h-px"
-					style={{
-						background:
-							"linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)",
-					}}
-				/>
-				<div
-					aria-hidden
-					className="pointer-events-none absolute -top-10 left-1/2 h-20 w-2/3 -translate-x-1/2 rounded-full opacity-60"
-					style={{
-						background:
-							"radial-gradient(ellipse at center, rgba(120,170,255,0.22) 0%, transparent 70%)",
-						filter: "blur(14px)",
-					}}
-				/>
+			<div className="relative rounded-[40px] border border-white/[0.10] bg-[#19191b] px-2 py-2 shadow-2xl shadow-black/60">
 				<div className="relative grid grid-cols-4 gap-1.5">
 					{items.map(({ id, icon: Icon, label }) => {
 						const active = view === id;

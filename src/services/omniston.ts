@@ -126,6 +126,7 @@ class OmnistonClient {
 
 			this.ws.onclose = () => {
 				this.stopPing();
+				this.listeners.clear();
 				this.rejectAllPending(
 					new Error("Omniston WebSocket closed")
 				);
@@ -151,6 +152,7 @@ class OmnistonClient {
 	close() {
 		this.explicitlyClosed = true;
 		this.stopPing();
+		this.listeners.clear();
 		if (this.ws) {
 			this.ws.close();
 			this.ws = null;
@@ -279,12 +281,15 @@ class OmnistonClient {
 		return new Promise<Quote | null>((resolve) => {
 			let resolved = false;
 			let lastDebug: any = null;
+			let handler: ((event: MessageEvent) => void) | null = null;
+
 			const finish = (q: Quote | null) => {
 				if (resolved) return;
 				resolved = true;
 				clearTimeout(timer);
-				if (this.ws) {
-					this.ws.removeEventListener("message", handler as any);
+				const ws = this.ws;
+				if (ws && handler) {
+					ws.removeEventListener("message", handler);
 				}
 				if (!q) {
 					console.warn(
@@ -299,7 +304,7 @@ class OmnistonClient {
 				resolve(q);
 			};
 
-			const handler = (event: MessageEvent) => {
+			handler = (event: MessageEvent) => {
 				let data: any;
 				try {
 					data = JSON.parse(event.data);
@@ -342,13 +347,17 @@ class OmnistonClient {
 			if (this.ws) {
 				this.ws.addEventListener("message", handler);
 			}
-			console.log("[Omniston] sending quote RFQ", { id, params });
-			this.sendRaw({
-				jsonrpc: "2.0",
-				id,
-				method: "v1beta7.quote",
-				params,
-			});
+			try {
+				this.sendRaw({
+					jsonrpc: "2.0",
+					id,
+					method: "v1beta7.quote",
+					params,
+				});
+			} catch (e) {
+				console.error("[Omniston] sendRaw failed", e);
+				finish(null);
+			}
 		});
 	}
 

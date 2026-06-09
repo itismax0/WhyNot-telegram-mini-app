@@ -11,7 +11,7 @@ import {
 	LAMPORTS_PER_SOL,
 } from "@solana/web3.js";
 import { Buffer } from "buffer";
-import { getCache, setCache } from "../utils/cache";
+import { getCache, setCache, cachedFetch, removeCache } from "../utils/cache";
 import { upsertUsername, getUsernameRegistry } from "./supabase";
 
 export interface UsernameRegistry {
@@ -25,6 +25,14 @@ export function getChainForAsset(assetId: string): "ton" | "eth" | "sol" | null 
 	if (assetId === "eth") return "eth";
 	if (assetId === "sol") return "sol";
 	return null;
+}
+
+function amountToSmallestUnit(amount: number): bigint {
+	const parts = amount.toString().split(".");
+	if (parts.length === 1) return BigInt(parts[0]) * BigInt(1_000_000_000);
+	const intPart = parts[0];
+	const fracPart = parts[1].slice(0, 9).padEnd(9, "0");
+	return BigInt(intPart) * BigInt(1_000_000_000) + BigInt(fracPart);
 }
 
 export const ASSETS = [
@@ -92,9 +100,12 @@ export const ASSETS = [
 	},
 ];
 
+const providerCache: Record<string, any> = {};
+
 function getProviders(mode: "mainnet" | "testnet" | "devnet") {
+	if (providerCache[mode]) return providerCache[mode];
 	if (mode === "mainnet") {
-		return {
+		return (providerCache[mode] = {
 			ton: new TonClient({
 				endpoint: "https://toncenter.com/api/v2/jsonRPC",
 			}),
@@ -103,9 +114,9 @@ function getProviders(mode: "mainnet" | "testnet" | "devnet") {
 				"https://api.mainnet-beta.solana.com",
 				"confirmed"
 			),
-		};
+		});
 	} else if (mode === "testnet") {
-		return {
+		return (providerCache[mode] = {
 			ton: new TonClient({
 				endpoint: "https://testnet.toncenter.com/api/v2/jsonRPC",
 			}),
@@ -113,9 +124,9 @@ function getProviders(mode: "mainnet" | "testnet" | "devnet") {
 				"https://ethereum-sepolia-rpc.publicnode.com"
 			),
 			sol: new Connection("https://api.devnet.solana.com", "confirmed"),
-		};
+		});
 	} else {
-		return {
+		return (providerCache[mode] = {
 			ton: new TonClient({
 				endpoint: "https://testnet.toncenter.com/api/v2/jsonRPC",
 			}),
@@ -123,7 +134,7 @@ function getProviders(mode: "mainnet" | "testnet" | "devnet") {
 				"https://ethereum-sepolia-rpc.publicnode.com"
 			),
 			sol: new Connection("https://api.devnet.solana.com", "confirmed"),
-		};
+		});
 	}
 }
 
@@ -180,7 +191,7 @@ export async function fetchBalances(
 
 		return {
 			ton: tonBalance,
-			eth: Number(ethers.formatEther(ethWei)),
+			eth: Number.parseFloat(ethers.formatEther(ethWei).slice(0, 20)),
 			sol: solLamports / LAMPORTS_PER_SOL,
 			usdt: 0,
 			btc: 0,
@@ -207,10 +218,11 @@ export async function sendTransaction(
 			seqno,
 			secretKey: wallets.ton.keyPair.secretKey,
 			messages: [
-				internal({ to, value: amount.toString(), bounce: false }),
+				internal({ to: Address.parse(to), value: amountToSmallestUnit(amount), bounce: true }),
 			],
 			sendMode: SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS,
 		});
+		removeCache(`txs_${mode}_${wallets.ton.address}`);
 	} else if (assetId === "eth") {
 		const activeWallet = wallets.eth.wallet.connect(providers.eth);
 		const tx = await activeWallet.sendTransaction({
@@ -223,7 +235,7 @@ export async function sendTransaction(
 			SystemProgram.transfer({
 				fromPubkey: wallets.sol.keypair.publicKey,
 				toPubkey: new PublicKey(to),
-				lamports: amount * LAMPORTS_PER_SOL,
+				lamports: Number(amountToSmallestUnit(amount)),
 			})
 		);
 		await sendAndConfirmTransaction(providers.sol, tx, [
@@ -403,36 +415,39 @@ export async function fetchTransactions(
 	address: string,
 	mode: "mainnet" | "testnet" | "devnet"
 ): Promise<WalletTransaction[]> {
-	const endpoint =
-		mode === "mainnet"
-			? "https://toncenter.com/api/v2/getTransactions"
-			: "https://testnet.toncenter.com/api/v2/getTransactions";
+	const cacheKey = `txs_${mode}_${address}`;
+	return cachedFetch(cacheKey, async () => {
+		const endpoint =
+			mode === "mainnet"
+				? "https://toncenter.com/api/v2/getTransactions"
+				: "https://testnet.toncenter.com/api/v2/getTransactions";
 
-	try {
-		const res = await fetch(`${endpoint}?address=${address}&limit=10`);
-		const data = await res.json();
-		if (data.ok && Array.isArray(data.result)) {
-			return data.result.map((tx: any) => {
-				const outMsg = tx.out_msgs?.[0];
-				const inMsg = tx.in_msg;
-				const isOut = outMsg !== undefined;
-				const msg = isOut ? outMsg : inMsg;
-				const value = msg ? Number(msg.value) / 1e9 : 0;
-				return {
-					hash: tx.transaction_id?.hash || "unknown",
-					type: isOut ? "send" : "receive",
-					value,
-					from: inMsg?.source || "",
-					to: outMsg?.destination || inMsg?.destination || "",
-					timestamp: tx.utime * 1000,
-				};
-			});
+		try {
+			const res = await fetch(`${endpoint}?address=${address}&limit=10`);
+			const data = await res.json();
+			if (data.ok && Array.isArray(data.result)) {
+				return data.result.map((tx: any) => {
+					const outMsg = tx.out_msgs?.[0];
+					const inMsg = tx.in_msg;
+					const isOut = outMsg !== undefined;
+					const msg = isOut ? outMsg : inMsg;
+					const value = msg ? Number(msg.value) / 1e9 : 0;
+					return {
+						hash: tx.transaction_id?.hash || "unknown",
+						type: isOut ? "send" : "receive",
+						value,
+						from: inMsg?.source || "",
+						to: outMsg?.destination || inMsg?.destination || "",
+						timestamp: tx.utime * 1000,
+					};
+				});
+			}
+			return [];
+		} catch (e) {
+			console.error("Error fetching transactions", e);
+			return [];
 		}
-		return [];
-	} catch (e) {
-		console.error("Error fetching transactions", e);
-		return [];
-	}
+	}, 30_000);
 }
 
 export async function registerUsername(
@@ -442,10 +457,20 @@ export async function registerUsername(
 	solAddress: string
 ): Promise<boolean> {
 	if (!username) return false;
+	const cleanUser = username.replace("@", "").trim().toLowerCase();
+	const cached = getCache<UsernameRegistry>(`username_${cleanUser}`);
+	if (cached && cached.ton === tonAddress && cached.eth === ethAddress && cached.sol === solAddress) {
+		return true;
+	}
+	const existing = await getUsernameRegistry(username);
+	if (existing && existing.ton === tonAddress && existing.eth === ethAddress && existing.sol === solAddress) {
+		setCache(`username_${cleanUser}`, existing, 5 * 60 * 1000);
+		return true;
+	}
 	const registry = { ton: tonAddress, eth: ethAddress, sol: solAddress };
 	const ok = await upsertUsername(username, registry);
 	if (ok) {
-		setCache(`username_${username.replace("@", "").trim().toLowerCase()}`, registry, 5 * 60 * 1000);
+		setCache(`username_${cleanUser}`, registry, 5 * 60 * 1000);
 	}
 	return ok;
 }
@@ -802,7 +827,7 @@ export async function evaluateReputationReal(
 		colorClass = "text-[#ff453a]";
 	}
 
-	console.log(`[WhyNot] Real on-chain score for ${clean}:`, { balance, txCount, volumeVal: volumeVal.toFixed(4), accountAgeMonths: accountAgeMonths.toFixed(1), score });
+	console.warn(`[WhyNot] Real on-chain score for ${clean}:`, { balance, txCount, volumeVal: volumeVal.toFixed(4), accountAgeMonths: accountAgeMonths.toFixed(1), score });
 
 	return {
 		score,

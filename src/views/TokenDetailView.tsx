@@ -237,7 +237,7 @@ export const TokenDetailView = () => {
 		fetch(`https://api.coingecko.com/api/v3/coins/${cgId}?localization=false&tickers=false&community_data=false&developer_data=false`)
 			.then(r => r.json())
 			.then(setMarketData)
-			.catch(() => {});
+			.catch(() => console.warn("TokenDetailView: failed to fetch market data"));
 	}, [cgId]);
 
 	// Fetch 24h ticker from Binance (change %, volume)
@@ -246,7 +246,7 @@ export const TokenDetailView = () => {
 		fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${binanceSymbol}`)
 			.then(r => r.json())
 			.then(setTickerData)
-			.catch(() => {});
+			.catch(() => console.warn("TokenDetailView: failed to fetch ticker data"));
 	}, [binanceSymbol]);
 
 	// Fetch top SOL accounts for holder data
@@ -310,7 +310,7 @@ export const TokenDetailView = () => {
 					setChartPoints(pts);
 				}
 			})
-			.catch(() => {})
+			.catch(() => console.warn("TokenDetailView: failed to fetch chart data"))
 			.finally(() => setLoadingChart(false));
 	}, [binanceSymbol, period, asset]);
 
@@ -332,7 +332,7 @@ export const TokenDetailView = () => {
 					})));
 				}
 			})
-			.catch(() => {})
+			.catch(() => console.warn("TokenDetailView: failed to fetch news"))
 			.finally(() => setLoadingNews(false));
 	}, [newsRss]);
 
@@ -340,8 +340,13 @@ export const TokenDetailView = () => {
 		if (activeTab === "news") fetchNews();
 	}, [activeTab, fetchNews]);
 
+	useEffect(() => {
+		if (!asset) {
+			setView("main");
+		}
+	}, [asset, setView]);
+
 	if (!asset) {
-		setView("main");
 		return null;
 	}
 

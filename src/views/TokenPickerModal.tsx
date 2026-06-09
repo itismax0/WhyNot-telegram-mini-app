@@ -43,6 +43,23 @@ function toSwapToken(a: StonfiAsset): SwapToken {
 	};
 }
 
+function mainTokenToStonfiAsset(t: SwapToken): StonfiAsset {
+	return {
+		contractAddress: t.address,
+		symbol: t.symbol,
+		displayName: t.name,
+		imageUrl: t.icon,
+		decimals: t.decimals,
+		kind: t.kind === "Ton" ? "Ton" : "Jetton",
+		dexPriceUsd: t.priceUsd ? t.priceUsd.toString() : null,
+		popularityIndex: t.popularityIndex,
+		deprecated: false,
+		blacklisted: false,
+		tags: [],
+		community: false,
+	};
+}
+
 const MAIN_BADGE: Record<string, string> = {
 	ton: "NATIVE",
 	eth: "EVM",
@@ -140,10 +157,16 @@ export const TokenPickerModal = ({
 	const filtered = useMemo(() => {
 		if (!assets) return [];
 		let list = filterSwapableAssets(assets);
-		const q = query.trim();
+		const q = query.trim().toLowerCase();
 		if (q) {
 			const searched = searchAssets(list, q, 200);
-			list = searched;
+			const matchingMain = mainTokens.filter(
+				(t) =>
+					t.symbol.toLowerCase().includes(q) ||
+					t.name.toLowerCase().includes(q) ||
+					t.address.toLowerCase().includes(q)
+			);
+			list = [...matchingMain.map(mainTokenToStonfiAsset), ...searched];
 		} else {
 			list = list.filter((a) => a.contractAddress !== excludeAddress);
 		}
@@ -157,7 +180,7 @@ export const TokenPickerModal = ({
 			);
 		}
 		return list.slice(0, 200);
-	}, [assets, query, sortMode, excludeAddress]);
+	}, [assets, query, sortMode, excludeAddress, mainTokens]);
 
 	const handleCustom = async () => {
 		const addr = customAddress.trim();

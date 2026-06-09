@@ -26,8 +26,17 @@ export async function fetchJettonBalance(
 
 	const base = mode === "mainnet" ? TONCENTER_API : TONCENTER_TESTNET_API;
 
+	const fetchWithRetry = async (url: string, retries = 2): Promise<Response> => {
+		for (let i = 0; i <= retries; i++) {
+			const res = await fetch(url);
+			if (res.status !== 429 || i === retries) return res;
+			await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
+		}
+		throw new Error("Max retries");
+	};
+
 	try {
-		const walletRes = await fetch(
+		const walletRes = await fetchWithRetry(
 			`${base}/runGetMethod?address=${encodeURIComponent(
 				master
 			)}&method=get_wallet_address&stack=${encodeURIComponent(
@@ -50,7 +59,7 @@ export async function fetchJettonBalance(
 			return 0;
 		}
 
-		const balRes = await fetch(
+		const balRes = await fetchWithRetry(
 			`${base}/getAddressBalance?address=${encodeURIComponent(
 				jettonWalletAddress
 			)}`
@@ -80,8 +89,11 @@ export async function fetchJettonBalance(
 		return humanBalance;
 	} catch (e) {
 		console.warn("fetchJettonBalance failed", master, e);
-		setCache(cacheKey(master, owner, mode), 0, JETTON_BALANCE_TTL);
-		return 0;
+		if (getCache<number>(cacheKey(master, owner, mode)) === null) {
+			setCache(cacheKey(master, owner, mode), 0, JETTON_BALANCE_TTL);
+		}
+		const cached = getCache<number>(cacheKey(master, owner, mode));
+		return cached ?? 0;
 	}
 }
 
