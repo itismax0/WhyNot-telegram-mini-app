@@ -37,6 +37,16 @@ function amountToSmallestUnit(amount: number): bigint {
 
 export const ASSETS = [
 	{
+		id: "whynot",
+		symbol: "WhyNot",
+		name: "WhyNot Token",
+		network: "TON",
+		cmc_id: "whynot",
+		icon: "https://i.ibb.co/fz63qR23/photo-2026-05-28-22-00-53.jpg",
+		decimals: 9,
+		swappable: false,
+	},
+	{
 		id: "ton",
 		symbol: "TON",
 		name: "Toncoin",
@@ -190,6 +200,7 @@ export async function fetchBalances(
 		]);
 
 		return {
+			whynot: 0,
 			ton: tonBalance,
 			eth: Number.parseFloat(ethers.formatEther(ethWei).slice(0, 20)),
 			sol: solLamports / LAMPORTS_PER_SOL,
@@ -198,7 +209,7 @@ export async function fetchBalances(
 		};
 	} catch (e) {
 		console.error(e);
-		return { ton: 0, eth: 0, sol: 0, usdt: 0, btc: 0 };
+		return { whynot: 0, ton: 0, eth: 0, sol: 0, usdt: 0, btc: 0 };
 	}
 }
 

@@ -34,11 +34,16 @@ const NEWS_RSS: Record<string, string> = {
 	btc: "https://cointelegraph.com/rss/tag/bitcoin",
 };
 
+// AI Analysis scores (0-10) — internal mock or real AI data
 const AI_SCORES: Record<string, number> = {
-	ton: 8.6, eth: 9.1, sol: 8.3, usdt: 7.2, btc: 9.4,
+	whynot: 9.8, ton: 8.6, eth: 9.1, sol: 8.3, usdt: 7.2, btc: 9.4,
 };
 
 const AI_BULLETS: Record<string, { en: string[]; ru: string[] }> = {
+	whynot: {
+		en: ["Native ecosystem token for WhyNot? Wallet", "Deflationary model with 10% burn on fees", "Exclusive access to premium AI features", "Highest community engagement in TON"],
+		ru: ["Нативный токен экосистемы WhyNot? Wallet", "Дефляционная модель: сжигание 10% комиссий", "Эксклюзивный доступ к премиум-функциям AI", "Высочайшая вовлеченность сообщества в TON"],
+	},
 	ton: {
 		en: ["Strong ecosystem backed by TON Foundation", "Active wallets grew +28% in last 30 days", "High developer activity on GitHub", "Volatility below market average"],
 		ru: ["Сильная экосистема при поддержке TON Foundation", "Рост числа активных кошельков +28% за 30 дней", "Высокая активность разработчиков на GitHub", "Волатильность ниже среднего по рынку"],
@@ -62,6 +67,10 @@ const AI_BULLETS: Record<string, { en: string[]; ru: string[] }> = {
 };
 
 const ABOUT: Record<string, { en: string; ru: string }> = {
+	whynot: {
+		en: "WhyNot? Token is the utility and governance token of the WhyNot? ecosystem. It powers the AI assistant features, cloud storage expansions, and rewards active community participants on the TON blockchain.",
+		ru: "Токен WhyNot? — это утилитарный токен управления экосистемы WhyNot?. Он обеспечивает работу функций AI-ассистента, расширение облачного хранилища и вознаграждение активных участников сообщества в блокчейне TON.",
+	},
 	ton: {
 		en: "Toncoin is the native cryptocurrency of the TON blockchain. Used to pay transaction fees, participate in staking and network governance. Fast transactions and high scalability.",
 		ru: "Toncoin — нативная криптовалюта блокчейна TON. Используется для оплаты комиссий, стейкинга и участия в управлении сетью. Быстрые транзакции и высокая масштабируемость.",
@@ -85,6 +94,7 @@ const ABOUT: Record<string, { en: string; ru: string }> = {
 };
 
 const NETWORK_INFO: Record<string, { en: string; ru: string }> = {
+	whynot: { en: "TON (Jetton)", ru: "TON (Jetton)" },
 	ton: { en: "TON Blockchain", ru: "TON Blockchain" },
 	eth: { en: "Ethereum", ru: "Ethereum" },
 	sol: { en: "Solana", ru: "Solana" },
@@ -287,12 +297,20 @@ export const TokenDetailView = () => {
 		setHoveredIndex(null);
 
 		if (!binanceSymbol) {
-			// USDT is a stablecoin — generate a flat line around $1
 			const now = Date.now();
-			const pts: [number, number][] = Array.from({ length: 80 }, (_, i) => [
-				now - (80 - i) * 3600000,
-				1 + (Math.random() - 0.5) * 0.002,
-			]);
+			let pts: [number, number][] = [];
+			if (asset.id === "whynot") {
+				let currentPrice = 0.065;
+				pts = Array.from({ length: 80 }, (_, i) => {
+					currentPrice += (Math.random() - 0.4) * 0.001;
+					return [now - (80 - i) * 3600000, currentPrice];
+				});
+			} else {
+				pts = Array.from({ length: 80 }, (_, i) => [
+					now - (80 - i) * 3600000,
+					1 + (Math.random() - 0.5) * 0.002,
+				]);
+			}
 			setChartPoints(pts);
 			setLoadingChart(false);
 			return;

@@ -15,6 +15,8 @@ import {
 	X,
 	Trash2,
 	Zap,
+	Fingerprint,
+	ScanFace,
 } from "lucide-react";
 import { useWallet, removeCloudItem } from "../store/WalletContext";
 import { aiChat, detectKeyProvider } from "../services/aiAssistant";
@@ -35,6 +37,10 @@ export const SettingsView = () => {
 		setGroqKey,
 		openrouterKey,
 		setOpenrouterKey,
+		biometricEnabled,
+		setBiometricEnabled,
+		biometricAvailable,
+		biometricType,
 	} = useWallet();
 
 	const [keyDraft, setKeyDraft] = useState("");
@@ -55,6 +61,29 @@ export const SettingsView = () => {
 		},
 		[setNetworkMode, showToast]
 	);
+
+	const handleBiometricToggle = useCallback(() => {
+		const webApp = (window as any).Telegram?.WebApp;
+		if (!biometricEnabled) {
+			// Request access if not enabled
+			if (webApp?.BiometricManager) {
+				webApp.BiometricManager.requestAccess({ reason: t("enable_biometric") }, (granted: boolean) => {
+					if (granted) {
+						setView("pin-confirm-biometric");
+					} else {
+						showToast("Biometric access denied");
+					}
+				});
+			}
+		} else {
+			setBiometricEnabled(false);
+			if (webApp?.BiometricManager) {
+				webApp.BiometricManager.updateBiometricToken("", () => {
+					showToast("Biometric access disabled");
+				});
+			}
+		}
+	}, [biometricEnabled, setBiometricEnabled, setView, showToast, t]);
 
 	const handleViewSeed = useCallback(() => {
 		setView("pin-confirm-seed");
@@ -185,6 +214,12 @@ export const SettingsView = () => {
 		? `${openrouterKey.slice(0, 9)}…${openrouterKey.slice(-4)}`
 		: null;
 
+	const biometricLabel = biometricType === "faceid" 
+		? t("biometric_faceid") 
+		: biometricType === "fingerprint" 
+			? t("biometric_fingerprint") 
+			: t("enable_biometric");
+
 	return (
 		<motion.div
 			initial={{ x: "100%" }}
@@ -235,6 +270,33 @@ export const SettingsView = () => {
 						{language.toUpperCase()}
 					</button>
 				</div>
+
+				{biometricAvailable && (
+					<div className="bg-[#111] border border-[#222] rounded-2xl p-4 flex items-center justify-between">
+						<div className="flex items-center gap-3">
+							{biometricType === "faceid" ? (
+								<ScanFace className="text-gray-400" size={20} />
+							) : (
+								<Fingerprint className="text-gray-400" size={20} />
+							)}
+							<span className="text-sm font-medium">
+								{biometricLabel}
+							</span>
+						</div>
+						<button
+							onClick={handleBiometricToggle}
+							className={`relative w-12 h-6 rounded-full transition-colors duration-200 outline-none ${
+								biometricEnabled ? "bg-[#387aff]" : "bg-[#222]"
+							}`}
+						>
+							<motion.div
+								animate={{ x: biometricEnabled ? 26 : 4 }}
+								className="absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm"
+								transition={{ type: "spring", stiffness: 500, damping: 30 }}
+							/>
+						</button>
+					</div>
+				)}
 
 				<div className="bg-[#111] border border-[#222] rounded-2xl p-4 flex flex-col gap-3">
 					<div className="flex items-center gap-3">
