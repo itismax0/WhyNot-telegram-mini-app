@@ -14,8 +14,10 @@ type ViewState =
 	| "pin-repeat"
 	| "pin-enter"
 	| "pin-confirm-seed"
+	| "pin-confirm-biometric"
 	| "restore-prompt"
 	| "restore-input"
+	| "biometric-setup"
 	| "main"
 	| "receive"
 	| "send"
@@ -23,6 +25,8 @@ type ViewState =
 	| "history"
 	| "settings"
 	| "more"
+	| "vpn"
+	| "cloud"
 	| "token_detail"
 	| "ai";
 type NetworkMode = "mainnet" | "testnet" | "devnet";
@@ -173,6 +177,10 @@ export const translations: Record<Language, Record<string, string>> = {
 		recipient_title: "Recipient",
 		sum_title: "Amount",
 		transfer_title: "Transfer",
+		biometric_faceid: "Face ID",
+		biometric_fingerprint: "Fingerprint",
+		enable_biometric: "Enable Biometrics",
+		ecosystem: "Ecosystem",
 	},
 	ru: {
 		welcome_desc:
@@ -234,6 +242,14 @@ export const translations: Record<Language, Record<string, string>> = {
 		recipient_title: "Получатель",
 		sum_title: "Сумма",
 		transfer_title: "Перевод",
+		biometric_faceid: "Face ID",
+		biometric_fingerprint: "Отпечаток пальца",
+		enable_biometric: "Включить биометрию",
+		biometric_setup_title: "Защитите свой кошелек",
+		biometric_setup_desc: "Используйте {{type}} для быстрого входа и безопасного подтверждения операций.",
+		btn_enable: "ВКЛЮЧИТЬ {{type}}",
+		btn_skip: "ПРОПУСТИТЬ",
+		ecosystem: "Экосистема",
 	},
 };
 
@@ -267,10 +283,14 @@ interface WalletContextType {
 	setGroqKey: (k: string | null) => void;
 	openrouterKey: string | null;
 	setOpenrouterKey: (k: string | null) => void;
+	biometricEnabled: boolean;
+	setBiometricEnabled: (v: boolean) => void;
+	biometricAvailable: boolean;
+	biometricType: "faceid" | "fingerprint" | "biometrics" | null;
 }
 
-type WalletDataContextType = Omit<WalletContextType, "setView" | "setWallets" | "setBalances" | "setRates" | "setChanges" | "setMnemonic" | "showToast" | "setNetworkMode" | "setLanguage" | "setTempPin" | "setSeedRevealed" | "setSelectedAsset" | "setGroqKey" | "setOpenrouterKey">;
-type WalletActionsContextType = Pick<WalletContextType, "setView" | "setWallets" | "setBalances" | "setRates" | "setChanges" | "setMnemonic" | "showToast" | "setNetworkMode" | "setLanguage" | "setTempPin" | "setSeedRevealed" | "setSelectedAsset" | "setGroqKey" | "setOpenrouterKey">;
+type WalletDataContextType = Omit<WalletContextType, "setView" | "setWallets" | "setBalances" | "setRates" | "setChanges" | "setMnemonic" | "showToast" | "setNetworkMode" | "setLanguage" | "setTempPin" | "setSeedRevealed" | "setSelectedAsset" | "setGroqKey" | "setOpenrouterKey" | "setBiometricEnabled">;
+type WalletActionsContextType = Pick<WalletContextType, "setView" | "setWallets" | "setBalances" | "setRates" | "setChanges" | "setMnemonic" | "showToast" | "setNetworkMode" | "setLanguage" | "setTempPin" | "setSeedRevealed" | "setSelectedAsset" | "setGroqKey" | "setOpenrouterKey" | "setBiometricEnabled">;
 
 const WalletDataContext = createContext<WalletDataContextType>({} as WalletDataContextType);
 const WalletActionsContext = createContext<WalletActionsContextType>({} as WalletActionsContextType);
@@ -290,6 +310,9 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 	const [selectedAsset, setSelectedAsset] = useState<any>(null);
 	const [groqKey, setGroqKeyState] = useState<string | null>(null);
 	const [openrouterKey, setOpenrouterKeyState] = useState<string | null>(null);
+	const [biometricEnabled, setBiometricEnabledState] = useState<boolean>(false);
+	const [biometricAvailable, setBiometricAvailable] = useState<boolean>(false);
+	const [biometricType, setBiometricType] = useState<"faceid" | "fingerprint" | "biometrics" | null>(null);
 
 	useEffect(() => {
 		const savedLang = localStorage.getItem("wallet_lang") as Language;
@@ -300,6 +323,24 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 		if (savedGroq) setGroqKeyState(savedGroq);
 		const savedOr = localStorage.getItem("whynot_openrouter_key");
 		if (savedOr) setOpenrouterKeyState(savedOr);
+		const savedBio = localStorage.getItem("wallet_biometric") === "true";
+		setBiometricEnabledState(savedBio);
+
+		// Initialize BiometricManager
+		if (webApp?.BiometricManager) {
+			webApp.BiometricManager.init(() => {
+				setBiometricAvailable(webApp.BiometricManager.isInited && webApp.BiometricManager.isBiometricAvailable);
+				
+				const platform = webApp.platform;
+				if (platform === "ios") {
+					setBiometricType("faceid");
+				} else if (platform === "android") {
+					setBiometricType("fingerprint");
+				} else {
+					setBiometricType("biometrics");
+				}
+			});
+		}
 	}, []);
 
 	const setLanguage = useCallback((l: Language) => {
@@ -330,6 +371,11 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 			setOpenrouterKeyState(null);
 			localStorage.removeItem("whynot_openrouter_key");
 		}
+	}, []);
+
+	const setBiometricEnabled = useCallback((v: boolean) => {
+		setBiometricEnabledState(v);
+		localStorage.setItem("wallet_biometric", v ? "true" : "false");
 	}, []);
 
 	const showToast = useCallback((msg: string) => {
@@ -365,8 +411,11 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 			selectedAsset,
 			groqKey,
 			openrouterKey,
+			biometricEnabled,
+			biometricAvailable,
+			biometricType,
 		}),
-		[view, wallets, balances, rates, changes, mnemonic, toast, networkMode, language, t, tempPin, seedRevealed, selectedAsset, groqKey, openrouterKey]
+		[view, wallets, balances, rates, changes, mnemonic, toast, networkMode, language, t, tempPin, seedRevealed, selectedAsset, groqKey, openrouterKey, biometricEnabled, biometricAvailable, biometricType]
 	);
 
 	const actionsValue = useMemo<WalletActionsContextType>(
@@ -385,9 +434,11 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 			setSelectedAsset,
 			setGroqKey,
 			setOpenrouterKey,
+			setBiometricEnabled,
 		}),
-		[setView, setWallets, setBalances, setRates, setChanges, setMnemonic, showToast, setNetworkMode, setLanguage, setTempPin, setSeedRevealed, setSelectedAsset, setGroqKey, setOpenrouterKey]
+		[setView, setWallets, setBalances, setRates, setChanges, setMnemonic, showToast, setNetworkMode, setLanguage, setTempPin, setSeedRevealed, setSelectedAsset, setGroqKey, setOpenrouterKey, setBiometricEnabled]
 	);
+
 
 	return (
 		<WalletActionsContext.Provider value={actionsValue}>

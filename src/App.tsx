@@ -12,6 +12,7 @@ import {
 	PinManager,
 	RestorePromptView,
 	RestoreInputView,
+	BiometricSetupView,
 } from "./views/AuthViews";
 import {
 	MainView,
@@ -19,6 +20,8 @@ import {
 	SendView,
 	HistoryView,
 	MoreView,
+	VPNView,
+	CloudView,
 } from "./views/MainViews";
 import { TokenDetailView } from "./views/TokenDetailView";
 import { SettingsView } from "./views/SettingsView";
@@ -158,6 +161,9 @@ const AppContent = () => {
 					if (data[a.cmc_id]) {
 						newRates[a.id] = data[a.cmc_id].usd;
 						newChanges[a.id] = data[a.cmc_id].usd_24h_change ?? 0;
+					} else if (a.id === "whynot") {
+						newRates[a.id] = 0.07;
+						newChanges[a.id] = 5.4;
 					}
 				});
 				setRates(newRates);
@@ -224,6 +230,9 @@ const AppContent = () => {
 					{view === "restore-input" && (
 						<RestoreInputView key="restore-input" />
 					)}
+					{view === "biometric-setup" && (
+						<BiometricSetupView key="biometric-setup" />
+					)}
 					{view === "main" && <MainView key="main" />}
 					{view === "receive" && <ReceiveView key="receive" />}
 					{view === "send" && <SendView key="send" />}
@@ -231,6 +240,8 @@ const AppContent = () => {
 					{view === "history" && <HistoryView key="history" />}
 					{view === "settings" && <SettingsView key="settings" />}
 					{view === "more" && <MoreView key="more" />}
+					{view === "vpn" && <VPNView key="vpn" />}
+					{view === "cloud" && <CloudView key="cloud" />}
 					{view === "token_detail" && <TokenDetailView key="token_detail" />}
 					{view === "ai" && <AIChatView key="ai" />}
 				</AnimatePresence>

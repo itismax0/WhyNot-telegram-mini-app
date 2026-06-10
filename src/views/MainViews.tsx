@@ -19,6 +19,10 @@ import {
 	Send,
 	Wallet,
 	Bot,
+	Cloud,
+	Globe,
+	HardDrive,
+	ExternalLink,
 } from "lucide-react";
 import { useWallet } from "../store/WalletContext";
 
@@ -1473,43 +1477,25 @@ export const HistoryView = () => {
 };
 
 export const MoreView = () => {
-	const { setView, language } = useWallet();
+	const { setView, language, t } = useWallet();
 	const items = [
 		{
-			id: "receive",
-			title: language === "ru" ? "Пополнить" : "Receive",
+			id: "vpn",
+			title: "VPN",
 			description:
 				language === "ru"
-					? "Адреса и QR-код кошелька"
-					: "Wallet addresses and QR code",
-			icon: ArrowDownToLine,
+					? "Безопасный доступ и обход блокировок"
+					: "Secure access and bypass blocks",
+			icon: Globe,
 		},
 		{
-			id: "history",
-			title: language === "ru" ? "История" : "History",
+			id: "cloud",
+			title: language === "ru" ? "Облако" : "Cloud",
 			description:
 				language === "ru"
-					? "Операции из блокчейн-реестра"
-					: "Transactions from the blockchain ledger",
-			icon: Clock,
-		},
-		{
-			id: "main",
-			title: language === "ru" ? "Активы" : "Assets",
-			description:
-				language === "ru"
-					? "Баланс и список монет"
-					: "Balance and token list",
-			icon: Wallet,
-		},
-		{
-			id: "settings",
-			title: language === "ru" ? "Настройки" : "Settings",
-			description:
-				language === "ru"
-					? "Сеть, язык и seed-фраза"
-					: "Network, language and seed phrase",
-			icon: Settings,
+					? "Приватное децентрализованное хранилище"
+					: "Private decentralized storage",
+			icon: HardDrive,
 		},
 	] as const;
 
@@ -1526,7 +1512,7 @@ export const MoreView = () => {
 						WhyNot?
 					</p>
 					<h2 className="font-medium text-2xl leading-tight">
-						{language === "ru" ? "Еще" : "More"}
+						{t("ecosystem")}
 					</h2>
 				</div>
 				<div className="w-12 h-12 bg-[#111] border border-[#222] rounded-2xl flex items-center justify-center text-[#2f7dff]">
@@ -1539,7 +1525,7 @@ export const MoreView = () => {
 					<button
 						key={id}
 						type="button"
-						onClick={() => setView(id)}
+						onClick={() => setView(id as any)}
 						className="min-h-[142px] rounded-2xl border border-[#1a1a1a] bg-[#0a0a0a] p-4 text-left transition-all active:scale-[0.98] hover:bg-[#111]"
 					>
 						<div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl bg-[#151515] text-white border border-[#242424]">
@@ -1553,6 +1539,130 @@ export const MoreView = () => {
 						</p>
 					</button>
 				))}
+			</div>
+		</motion.div>
+	);
+};
+
+export const VPNView = () => {
+	const { setView, language, showToast, t } = useWallet();
+	const vpnUrl = "https://raw.githack.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS_mobile.txt";
+
+	const handleCopy = () => {
+		const success = copyTextToClipboard(vpnUrl);
+		if (success) showToast(t("copied"));
+	};
+
+	return (
+		<motion.div
+			initial={{ x: "100%" }}
+			animate={{ x: 0 }}
+			transition={{ type: "spring", damping: 25, stiffness: 200 }}
+			className="flex flex-col min-h-screen p-5 pb-32"
+		>
+			<div className="flex items-center gap-4 mb-8 pt-2">
+				<button
+					onClick={() => setView("more")}
+					className="p-2 bg-[#111] rounded-full hover:bg-[#222] transition-colors"
+				>
+					<ChevronLeft size={20} />
+				</button>
+				<h2 className="font-medium text-lg">VPN Экосистема</h2>
+			</div>
+
+			<div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-[2rem] p-6 mb-6">
+				<div className="w-16 h-16 bg-[#111] rounded-2xl flex items-center justify-center text-[#2f7dff] border border-[#222] mb-6">
+					<Globe size={32} />
+				</div>
+				<h3 className="text-xl font-bold mb-2">Бесплатный VPN</h3>
+				<p className="text-gray-400 text-sm leading-relaxed mb-6">
+					{language === "ru" 
+						? "Используйте наш проверенный список конфигураций для обхода ограничений и защиты вашего трафика."
+						: "Use our verified list of configurations to bypass restrictions and protect your traffic."}
+				</p>
+
+				<div className="space-y-4">
+					<div className="p-4 bg-[#111] border border-[#222] rounded-2xl">
+						<p className="text-[10px] text-gray-500 uppercase font-mono mb-2">Ссылка на подписку</p>
+						<div className="text-xs font-mono break-all text-gray-300 mb-4 opacity-60">
+							{vpnUrl}
+						</div>
+						<button
+							onClick={handleCopy}
+							className="w-full py-3 bg-white text-black font-bold rounded-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+						>
+							<Copy size={16} /> {language === "ru" ? "СКОПИРОВАТЬ ССЫЛКУ" : "COPY LINK"}
+						</button>
+					</div>
+
+					<div className="p-4 bg-[#151515]/50 border border-[#222]/50 rounded-2xl">
+						<h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+							<ExternalLink size={14} className="text-blue-500" /> 
+							{language === "ru" ? "Как пользоваться?" : "How to use?"}
+						</h4>
+						<ul className="text-xs text-gray-500 space-y-2 list-disc pl-4">
+							<li>{language === "ru" ? "Скопируйте ссылку выше" : "Copy the link above"}</li>
+							<li>{language === "ru" ? "Установите клиент (v2rayNG, NekoBox, Karing)" : "Install a client (v2rayNG, NekoBox, Karing)"}</li>
+							<li>{language === "ru" ? "Добавьте ссылку как 'Subscription' или 'Import from URL'" : "Add the link as a 'Subscription' or 'Import from URL'"}</li>
+							<li>{language === "ru" ? "Обновите список и подключитесь" : "Update the list and connect"}</li>
+						</ul>
+					</div>
+				</div>
+			</div>
+		</motion.div>
+	);
+};
+
+export const CloudView = () => {
+	const { setView, language } = useWallet();
+
+	return (
+		<motion.div
+			initial={{ x: "100%" }}
+			animate={{ x: 0 }}
+			transition={{ type: "spring", damping: 25, stiffness: 200 }}
+			className="flex flex-col min-h-screen p-5 pb-32"
+		>
+			<div className="flex items-center gap-4 mb-8 pt-2">
+				<button
+					onClick={() => setView("more")}
+					className="p-2 bg-[#111] rounded-full hover:bg-[#222] transition-colors"
+				>
+					<ChevronLeft size={20} />
+				</button>
+				<h2 className="font-medium text-lg">{language === "ru" ? "Облако" : "Cloud"}</h2>
+			</div>
+
+			<div className="flex-1 flex flex-col items-center justify-center text-center px-4">
+				<div className="relative mb-8">
+					<div className="absolute inset-0 bg-blue-500/20 blur-[60px] rounded-full" />
+					<div className="relative w-24 h-24 bg-[#0a0a0a] border border-[#1a1a1a] rounded-[2rem] flex items-center justify-center text-blue-500 shadow-2xl">
+						<Cloud size={48} />
+					</div>
+				</div>
+
+				<h3 className="text-2xl font-bold mb-4">{language === "ru" ? "В разработке" : "Coming Soon"}</h3>
+				<p className="text-gray-400 leading-relaxed mb-10 max-w-[280px]">
+					{language === "ru"
+						? "Мы строим самое защищенное децентрализованное хранилище в экосистеме WhyNot."
+						: "We are building the most secure decentralized storage in the WhyNot ecosystem."}
+				</p>
+
+				<div className="grid grid-cols-1 w-full gap-3">
+					{[
+						{ label: language === "ru" ? "Приватность" : "Privacy", desc: "End-to-end encryption" },
+						{ label: language === "ru" ? "Децентрализация" : "Decentralized", desc: "No central point of failure" },
+						{ label: language === "ru" ? "Интеграция" : "Integration", desc: "Direct wallet access" },
+					].map((feat, i) => (
+						<div key={i} className="p-4 bg-[#0a0a0a] border border-[#1a1a1a] rounded-2xl flex items-center justify-between">
+							<div className="text-left">
+								<p className="font-semibold text-sm">{feat.label}</p>
+								<p className="text-[10px] text-gray-500">{feat.desc}</p>
+							</div>
+							<div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
+						</div>
+					))}
+				</div>
 			</div>
 		</motion.div>
 	);
