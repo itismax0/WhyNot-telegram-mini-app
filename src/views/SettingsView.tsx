@@ -1,25 +1,78 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { motion } from "framer-motion";
 import {
-	ChevronLeft,
-	Key,
-	LogOut,
-	Globe,
-	Server,
-	Sparkles,
+	Bell,
+	ChevronRight,
+	Check,
 	Eye,
 	EyeOff,
 	ExternalLink,
-	Loader2,
-	Check,
-	X,
-	Trash2,
-	Zap,
 	Fingerprint,
+	Globe,
+	Key,
+	Loader2,
+	LogOut,
+	DollarSign,
 	ScanFace,
+	Server,
+	Sparkles,
+	Trash2,
+	X,
+	Zap,
 } from "lucide-react";
 import { useWallet, removeCloudItem } from "../store/WalletContext";
 import { aiChat, detectKeyProvider } from "../services/aiAssistant";
+
+const SettingsRow = ({
+	icon,
+	title,
+	value,
+	onClick,
+	disabled = false,
+}: {
+	icon: ReactNode;
+	title: string;
+	value?: string;
+	onClick?: () => void;
+	disabled?: boolean;
+}) => (
+	<button
+		type="button"
+		onClick={onClick}
+		disabled={disabled}
+		className="group relative flex min-h-[76px] w-full items-center gap-4 px-4 text-left transition-colors hover:bg-white/[0.025] active:bg-white/[0.05] disabled:cursor-default disabled:opacity-55 after:absolute after:bottom-0 after:left-[76px] after:right-4 after:h-px after:bg-white/[0.09] last:after:hidden"
+	>
+		{icon}
+		<span className="min-w-0 flex-1 truncate text-[17px] font-semibold tracking-[-0.01em] text-white">
+			{title}
+		</span>
+		{value && (
+			<span className="max-w-[35%] truncate text-right text-[16px] font-semibold text-[#8e8e93]">
+				{value}
+			</span>
+		)}
+		<ChevronRight
+			size={22}
+			strokeWidth={2.4}
+			className="flex-shrink-0 text-[#555559] transition-transform group-active:translate-x-0.5"
+		/>
+	</button>
+);
+
+const SettingsIcon = ({
+	children,
+	className,
+}: {
+	children: ReactNode;
+	className: string;
+}) => (
+	<span
+		className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-[13px] shadow-[inset_0_1px_0_rgba(255,255,255,0.24)] ${className}`}
+	>
+		{children}
+	</span>
+);
 
 export const SettingsView = () => {
 	const {
@@ -28,6 +81,8 @@ export const SettingsView = () => {
 		setNetworkMode,
 		language,
 		setLanguage,
+		baseCurrency,
+		setBaseCurrency,
 		mnemonic,
 		t,
 		showToast,
@@ -45,105 +100,165 @@ export const SettingsView = () => {
 
 	const [keyDraft, setKeyDraft] = useState("");
 	const [showKey, setShowKey] = useState(false);
+	const [notificationsEnabled, setNotificationsEnabled] = useState(
+		() => localStorage.getItem("wallet_notifications") !== "false"
+	);
 	const [testing, setTesting] = useState(false);
 	const [testResult, setTestResult] = useState<
 		null | { ok: boolean; msg: string; provider?: string }
 	>(null);
 
+	const isRu = language === "ru";
+
 	const handleLangChange = useCallback(() => {
 		setLanguage(language === "en" ? "ru" : "en");
 	}, [language, setLanguage]);
 
-	const handleNetworkChange = useCallback(
-		(e: React.ChangeEvent<HTMLSelectElement>) => {
-			setNetworkMode(e.target.value as any);
-			showToast(`Network switched to ${e.target.value.toUpperCase()}`);
-		},
-		[setNetworkMode, showToast]
-	);
+	const handleCurrencyChange = useCallback(() => {
+		const currencies = ["usd", "eur", "rub"] as const;
+		const next = currencies[(currencies.indexOf(baseCurrency) + 1) % currencies.length];
+		setBaseCurrency(next);
+		showToast(
+			language === "ru"
+				? `Валюта переключена: ${next.toUpperCase()}`
+				: `Currency switched to ${next.toUpperCase()}`
+		);
+	}, [baseCurrency, language, setBaseCurrency, showToast]);
+
+	const handleNetworkChange = useCallback(() => {
+		const modes = ["mainnet", "testnet", "devnet"] as const;
+		const next = modes[(modes.indexOf(networkMode) + 1) % modes.length];
+		setNetworkMode(next);
+		showToast(
+			language === "ru"
+				? `Сеть переключена: ${next.toUpperCase()}`
+				: `Network switched to ${next.toUpperCase()}`
+		);
+	}, [language, networkMode, setNetworkMode, showToast]);
+
+	const handleNotificationsToggle = useCallback(() => {
+		setNotificationsEnabled((current) => {
+			const next = !current;
+			localStorage.setItem("wallet_notifications", String(next));
+			showToast(
+				language === "ru"
+					? `Уведомления ${next ? "включены" : "выключены"}`
+					: `Notifications ${next ? "enabled" : "disabled"}`
+			);
+			return next;
+		});
+	}, [language, showToast]);
 
 	const handleBiometricToggle = useCallback(() => {
+		if (!biometricAvailable) return;
 		const webApp = (window as any).Telegram?.WebApp;
+
 		if (!biometricEnabled) {
-			// Request access if not enabled
 			if (webApp?.BiometricManager) {
-				webApp.BiometricManager.requestAccess({ reason: t("enable_biometric") }, (granted: boolean) => {
-					if (granted) {
-						setView("pin-confirm-biometric");
-					} else {
-						showToast("Biometric access denied");
+				webApp.BiometricManager.requestAccess(
+					{ reason: t("enable_biometric") },
+					(granted: boolean) => {
+						if (granted) {
+							setView("pin-confirm-biometric");
+						} else {
+							showToast(
+								language === "ru"
+									? "Доступ к биометрии отклонен"
+									: "Biometric access denied"
+							);
+						}
 					}
-				});
+				);
 			}
 		} else {
 			setBiometricEnabled(false);
-			if (webApp?.BiometricManager) {
-				webApp.BiometricManager.updateBiometricToken("", () => {
-					showToast("Biometric access disabled");
-				});
-			}
+			webApp?.BiometricManager?.updateBiometricToken("", () => {
+				showToast(
+					language === "ru"
+						? "Биометрия отключена"
+						: "Biometric access disabled"
+				);
+			});
 		}
-	}, [biometricEnabled, setBiometricEnabled, setView, showToast, t]);
+	}, [
+		biometricAvailable,
+		biometricEnabled,
+		language,
+		setBiometricEnabled,
+		setView,
+		showToast,
+		t,
+	]);
 
 	const handleViewSeed = useCallback(() => {
 		setView("pin-confirm-seed");
 	}, [setView]);
 
-	const handleBack = useCallback(() => {
-		setSeedRevealed(false);
-		setView("main");
-	}, [setSeedRevealed, setView]);
+	useEffect(() => {
+		return () => setSeedRevealed(false);
+	}, [setSeedRevealed]);
 
 	const handleWipeWallet = useCallback(async () => {
 		if (
 			confirm(
-				"Are you absolutely sure you want to delete this wallet? Your cloud data will be wiped."
+				language === "ru"
+					? "Вы точно хотите удалить кошелек? Данные в облаке будут стерты."
+					: "Are you absolutely sure you want to delete this wallet? Your cloud data will be wiped."
 			)
 		) {
 			await removeCloudItem("wallet_data");
 			localStorage.clear();
 			window.location.reload();
 		}
-	}, []);
+	}, [language]);
 
 	const handleSaveKey = useCallback(() => {
-		const v = keyDraft.trim();
-		if (!v) {
-			showToast("Enter a key or use Clear");
+		const value = keyDraft.trim();
+		if (!value) {
+			showToast(isRu ? "Введите ключ или очистите поле" : "Enter a key or use Clear");
 			return;
 		}
-		const provider = detectKeyProvider(v);
+
+		const provider = detectKeyProvider(value);
 		if (!provider) {
-			showToast("Key should start with gsk_… (Groq) or sk-… (OpenRouter)");
+			showToast(
+				isRu
+					? "Ключ должен начинаться с gsk_ или sk-"
+					: "Key should start with gsk_ (Groq) or sk- (OpenRouter)"
+			);
 			return;
 		}
+
 		if (provider === "groq") {
-			setGroqKey(v);
-			showToast("Groq key saved (primary)");
+			setGroqKey(value);
+			showToast(isRu ? "Groq ключ сохранен" : "Groq key saved");
 		} else {
-			setOpenrouterKey(v);
-			showToast("OpenRouter key saved (fallback)");
+			setOpenrouterKey(value);
+			showToast(isRu ? "OpenRouter ключ сохранен" : "OpenRouter key saved");
 		}
 		setKeyDraft("");
 		setTestResult(null);
-	}, [keyDraft, setGroqKey, setOpenrouterKey, showToast]);
+	}, [isRu, keyDraft, setGroqKey, setOpenrouterKey, showToast]);
 
 	const handleClearGroq = useCallback(() => {
 		setGroqKey(null);
 		setTestResult(null);
-		showToast("Groq key cleared");
-	}, [setGroqKey, showToast]);
+		showToast(isRu ? "Groq ключ удален" : "Groq key cleared");
+	}, [isRu, setGroqKey, showToast]);
 
 	const handleClearOpenRouter = useCallback(() => {
 		setOpenrouterKey(null);
 		setTestResult(null);
-		showToast("OpenRouter key cleared");
-	}, [setOpenrouterKey, showToast]);
+		showToast(isRu ? "OpenRouter ключ удален" : "OpenRouter key cleared");
+	}, [isRu, setOpenrouterKey, showToast]);
 
 	const handleTestPrimary = useCallback(async () => {
 		const target = groqKey || keyDraft.trim();
 		if (!target) {
-			setTestResult({ ok: false, msg: "No Groq key configured" });
+			setTestResult({
+				ok: false,
+				msg: isRu ? "Groq ключ не настроен" : "No Groq key configured",
+			});
 			return;
 		}
 		setTesting(true);
@@ -152,8 +267,8 @@ export const SettingsView = () => {
 			const result = await aiChat({
 				messages: [{ role: "user", content: "ping" }],
 				maxTokens: 8,
-				groqKey: groqKey,
-				openrouterKey: openrouterKey,
+				groqKey,
+				openrouterKey,
 			});
 			setTestResult({
 				ok: true,
@@ -168,29 +283,36 @@ export const SettingsView = () => {
 		} finally {
 			setTesting(false);
 		}
-	}, [groqKey, openrouterKey, keyDraft]);
+	}, [groqKey, isRu, keyDraft, openrouterKey]);
 
 	const handleTestDraft = useCallback(async () => {
-		const v = keyDraft.trim();
-		if (!v) {
-			setTestResult({ ok: false, msg: "Enter a key first" });
+		const value = keyDraft.trim();
+		if (!value) {
+			setTestResult({
+				ok: false,
+				msg: isRu ? "Сначала введите ключ" : "Enter a key first",
+			});
 			return;
 		}
-		const provider = detectKeyProvider(v);
+
+		const provider = detectKeyProvider(value);
 		if (!provider) {
 			setTestResult({
 				ok: false,
-				msg: "Key must start with gsk_… (Groq) or sk-… (OpenRouter)",
+				msg: isRu
+					? "Ключ должен начинаться с gsk_ или sk-"
+					: "Key must start with gsk_ or sk-",
 			});
 			return;
 		}
+
 		setTesting(true);
 		setTestResult(null);
 		try {
 			const result = await aiChat({
 				messages: [{ role: "user", content: "ping" }],
 				maxTokens: 8,
-				apiKey: v,
+				apiKey: value,
 			});
 			setTestResult({
 				ok: true,
@@ -205,7 +327,7 @@ export const SettingsView = () => {
 		} finally {
 			setTesting(false);
 		}
-	}, [keyDraft]);
+	}, [isRu, keyDraft]);
 
 	const groqPreview = groqKey
 		? `${groqKey.slice(0, 6)}…${groqKey.slice(-4)}`
@@ -214,248 +336,261 @@ export const SettingsView = () => {
 		? `${openrouterKey.slice(0, 9)}…${openrouterKey.slice(-4)}`
 		: null;
 
-	const biometricLabel = biometricType === "faceid" 
-		? t("biometric_faceid") 
-		: biometricType === "fingerprint" 
-			? t("biometric_fingerprint") 
-			: t("enable_biometric");
+	const biometricLabel =
+		biometricType === "faceid"
+			? t("biometric_faceid")
+			: biometricType === "fingerprint"
+				? t("biometric_fingerprint")
+				: t("enable_biometric");
+	const networkLabel =
+		networkMode === "mainnet"
+			? "Mainnet"
+			: networkMode === "testnet"
+				? "Testnet"
+				: "Devnet";
 
 	return (
 		<motion.div
-			initial={{ x: "100%" }}
-			animate={{ x: 0 }}
-			transition={{ type: "spring", damping: 25, stiffness: 200 }}
-			className="flex flex-col min-h-screen p-5 pb-32"
+			initial={{ opacity: 0, y: 12 }}
+			animate={{ opacity: 1, y: 0 }}
+			transition={{ type: "spring", damping: 26, stiffness: 240 }}
+			className="min-h-screen bg-[#050505] px-4 pb-32 pt-7 text-white"
 		>
-			<div className="flex items-center gap-4 mb-8 pt-2">
-				<button
-					onClick={handleBack}
-					className="p-2 bg-[#111] rounded-full hover:bg-[#222] transition-colors"
-				>
-					<ChevronLeft size={20} />
-				</button>
-				<h2 className="font-medium text-lg">{t("settings")}</h2>
-			</div>
+			<h1 className="mb-5 px-1 text-[30px] font-bold tracking-[-0.035em] text-[#a8a8ad]">
+				{isRu ? "Основные настройки" : "General settings"}
+			</h1>
 
-			<div className="space-y-6 flex-1">
-				<div className="bg-[#111] border border-[#222] rounded-2xl p-4 flex items-center justify-between">
-					<div className="flex items-center gap-3">
-						<Server className="text-gray-400" size={20} />
-						<span className="text-sm font-medium">
-							{t("network")}
-						</span>
+			<section className="overflow-hidden rounded-[28px] border border-white/[0.04] bg-[#1c1c1e] shadow-[0_18px_50px_rgba(0,0,0,0.28)]">
+				<SettingsRow
+					icon={
+						<SettingsIcon className="bg-gradient-to-br from-[#ff5147] to-[#ff2d55]">
+							<Bell size={25} fill="white" strokeWidth={2.2} />
+						</SettingsIcon>
+					}
+					title={isRu ? "Уведомления" : "Notifications"}
+					value={
+						notificationsEnabled
+							? isRu
+								? "Вкл"
+								: "On"
+							: isRu
+								? "Выкл"
+								: "Off"
+					}
+					onClick={handleNotificationsToggle}
+				/>
+				<SettingsRow
+					icon={
+						<SettingsIcon className="bg-gradient-to-br from-[#32d96b] to-[#20b856]">
+							{biometricType === "faceid" ? (
+								<ScanFace size={27} strokeWidth={2.3} />
+							) : (
+								<Fingerprint size={27} strokeWidth={2.3} />
+							)}
+						</SettingsIcon>
+					}
+					title={
+						isRu
+							? `Код-пароль и ${biometricLabel}`
+							: `Passcode and ${biometricLabel}`
+					}
+					value={
+						!biometricAvailable
+							? isRu
+								? "Недоступно"
+								: "Unavailable"
+							: biometricEnabled
+								? isRu
+									? "Вкл"
+									: "On"
+								: isRu
+									? "Выкл"
+									: "Off"
+					}
+					onClick={handleBiometricToggle}
+					disabled={!biometricAvailable}
+				/>
+				<SettingsRow
+					icon={
+						<SettingsIcon className="bg-gradient-to-br from-[#c04ee9] to-[#8f35d4]">
+							<Globe size={25} strokeWidth={2.2} />
+						</SettingsIcon>
+					}
+					title={t("language")}
+					value={isRu ? "Русский" : "English"}
+					onClick={handleLangChange}
+				/>
+				<SettingsRow
+					icon={
+						<SettingsIcon className="bg-gradient-to-br from-[#8e8e93] to-[#626267]">
+							<DollarSign size={25} strokeWidth={2.2} />
+						</SettingsIcon>
+					}
+					title={t("currency")}
+					value={baseCurrency.toUpperCase()}
+					onClick={handleCurrencyChange}
+				/>
+				<SettingsRow
+					icon={
+						<SettingsIcon className="bg-gradient-to-br from-[#8e8e93] to-[#626267]">
+							<Server size={24} strokeWidth={2.2} />
+						</SettingsIcon>
+					}
+					title={t("network")}
+					value={networkLabel}
+					onClick={handleNetworkChange}
+				/>
+			</section>
+
+			<h2 className="mb-3 mt-8 px-1 text-[15px] font-semibold uppercase tracking-[0.08em] text-[#77777d]">
+				{isRu ? "AI-ассистент" : "AI assistant"}
+			</h2>
+			<section className="overflow-hidden rounded-[28px] border border-white/[0.04] bg-[#1c1c1e] p-4">
+				<div className="mb-4 flex items-center gap-3">
+					<SettingsIcon className="bg-gradient-to-br from-[#4b8dff] to-[#2755dc]">
+						<Sparkles size={24} />
+					</SettingsIcon>
+					<div className="min-w-0 flex-1">
+						<p className="text-[17px] font-semibold">WhyNot AI</p>
+						<p className="mt-0.5 truncate text-[12px] text-[#8e8e93]">
+							{groqKey
+								? `Groq ${groqPreview}`
+								: openrouterKey
+									? `OpenRouter ${orPreview}`
+									: isRu
+										? "API-ключ не настроен"
+										: "API key is not configured"}
+						</p>
 					</div>
-					<select
-						value={networkMode}
-						onChange={handleNetworkChange}
-						className="bg-black border border-[#333] rounded-xl p-2 font-mono text-xs text-white outline-none"
-					>
-						<option value="mainnet">Mainnet</option>
-						<option value="testnet">Testnet</option>
-						<option value="devnet">Devnet</option>
-					</select>
 				</div>
 
-				<div className="bg-[#111] border border-[#222] rounded-2xl p-4 flex items-center justify-between">
-					<div className="flex items-center gap-3">
-						<Globe className="text-gray-400" size={20} />
-						<span className="text-sm font-medium">
-							{t("language")}
-						</span>
+				<div className="flex items-center gap-2">
+					<div className="relative flex-1">
+						<input
+							type={showKey ? "text" : "password"}
+							value={keyDraft}
+							onChange={(event) => setKeyDraft(event.target.value)}
+							placeholder="gsk_… or sk-or-v1-…"
+							className="w-full rounded-[14px] border border-white/[0.08] bg-[#111113] py-3 pl-3 pr-10 font-mono text-xs text-white outline-none transition-colors focus:border-[#387aff]/70"
+							autoComplete="off"
+							spellCheck={false}
+						/>
+						<button
+							type="button"
+							onClick={() => setShowKey((shown) => !shown)}
+							className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-[#77777d] hover:text-white"
+						>
+							{showKey ? <EyeOff size={15} /> : <Eye size={15} />}
+						</button>
 					</div>
 					<button
-						onClick={handleLangChange}
-						className="bg-black border border-[#333] rounded-xl px-4 py-2 text-xs font-mono text-white active:scale-95 transition-transform"
+						onClick={handleSaveKey}
+						disabled={!keyDraft.trim()}
+						className="rounded-[14px] bg-[#387aff] px-4 py-3 text-xs font-bold text-white transition-transform active:scale-95 disabled:opacity-40"
 					>
-						{language.toUpperCase()}
+						{isRu ? "Сохранить" : "Save"}
 					</button>
 				</div>
 
-				{biometricAvailable && (
-					<div className="bg-[#111] border border-[#222] rounded-2xl p-4 flex items-center justify-between">
-						<div className="flex items-center gap-3">
-							{biometricType === "faceid" ? (
-								<ScanFace className="text-gray-400" size={20} />
-							) : (
-								<Fingerprint className="text-gray-400" size={20} />
-							)}
-							<span className="text-sm font-medium">
-								{biometricLabel}
-							</span>
-						</div>
+				<div className="mt-3 flex flex-wrap items-center gap-2">
+					<button
+						onClick={keyDraft.trim() ? handleTestDraft : handleTestPrimary}
+						disabled={testing || (!keyDraft.trim() && !groqKey)}
+						className="flex items-center gap-1.5 rounded-xl bg-white/[0.07] px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
+					>
+						{testing ? (
+							<Loader2 size={13} className="animate-spin" />
+						) : (
+							<Zap size={13} />
+						)}
+						{isRu ? "Проверить" : "Test"}
+					</button>
+					{groqKey && (
 						<button
-							onClick={handleBiometricToggle}
-							className={`relative w-12 h-6 rounded-full transition-colors duration-200 outline-none ${
-								biometricEnabled ? "bg-[#387aff]" : "bg-[#222]"
-							}`}
+							onClick={handleClearGroq}
+							className="flex items-center gap-1.5 rounded-xl bg-white/[0.07] px-3 py-2 text-xs font-semibold text-[#ff6961]"
 						>
-							<motion.div
-								animate={{ x: biometricEnabled ? 26 : 4 }}
-								className="absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm"
-								transition={{ type: "spring", stiffness: 500, damping: 30 }}
-							/>
+							<Trash2 size={13} />
+							Groq
 						</button>
+					)}
+					{openrouterKey && (
+						<button
+							onClick={handleClearOpenRouter}
+							className="flex items-center gap-1.5 rounded-xl bg-white/[0.07] px-3 py-2 text-xs font-semibold text-[#ff6961]"
+						>
+							<Trash2 size={13} />
+							OpenRouter
+						</button>
+					)}
+					<a
+						href="https://console.groq.com/keys"
+						target="_blank"
+						rel="noreferrer noopener"
+						className="ml-auto flex items-center gap-1 text-[11px] font-semibold text-[#4a9dff]"
+					>
+						API keys
+						<ExternalLink size={11} />
+					</a>
+				</div>
+
+				{testResult && (
+					<div
+						className={`mt-3 flex items-center gap-2 rounded-xl bg-black/20 px-3 py-2 text-[11px] ${
+							testResult.ok ? "text-[#35d06f]" : "text-[#ff6961]"
+						}`}
+					>
+						{testResult.ok ? <Check size={13} /> : <X size={13} />}
+						<span className="break-all font-mono">{testResult.msg}</span>
 					</div>
 				)}
+			</section>
 
-				<div className="bg-[#111] border border-[#222] rounded-2xl p-4 flex flex-col gap-3">
-					<div className="flex items-center gap-3">
-						<Sparkles size={20} className="text-[#387aff]" />
-						<span className="text-sm font-medium">AI assistant</span>
-					</div>
-
-					<div className="flex items-center gap-2 text-[10px] font-mono">
-						<span
-							className={`px-1.5 py-0.5 rounded ${
-								groqKey
-									? "bg-green-500/15 text-green-400"
-									: "bg-[#222] text-gray-500"
-							}`}
-						>
-							{groqKey ? `GROQ ✓ ${groqPreview}` : "GROQ ✗"}
-						</span>
-						<span className="text-gray-600">primary</span>
-						<span
-							className={`px-1.5 py-0.5 rounded ${
-								openrouterKey
-									? "bg-blue-500/15 text-blue-400"
-									: "bg-[#222] text-gray-500"
-							}`}
-						>
-							{openrouterKey ? `OPENROUTER ✓ ${orPreview}` : "OPENROUTER ✗"}
-						</span>
-						<span className="text-gray-600">fallback</span>
-					</div>
-
-					<div className="flex items-center gap-2">
-						<div className="flex-1 relative">
-							<input
-								type={showKey ? "text" : "password"}
-								value={keyDraft}
-								onChange={(e) => setKeyDraft(e.target.value)}
-								placeholder="gsk_… or sk-or-v1-…"
-								className="w-full bg-black border border-[#333] rounded-xl pl-3 pr-9 py-2.5 font-mono text-xs text-white outline-none focus:border-[#387aff]/60 transition-colors"
-								autoComplete="off"
-								spellCheck={false}
-							/>
-							<button
-								type="button"
-								onClick={() => setShowKey((s) => !s)}
-								className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-white"
-							>
-								{showKey ? <EyeOff size={14} /> : <Eye size={14} />}
-							</button>
-						</div>
-						<button
-							onClick={handleSaveKey}
-							disabled={!keyDraft.trim()}
-							className="bg-[#387aff] hover:bg-[#2d6de0] disabled:opacity-50 text-white text-xs font-medium px-3 py-2.5 rounded-xl active:scale-95 transition-transform"
-						>
-							Save
-						</button>
-					</div>
-
-					<div className="flex items-center gap-2 flex-wrap">
-						<button
-							onClick={keyDraft.trim() ? handleTestDraft : handleTestPrimary}
-							disabled={testing || (!keyDraft.trim() && !groqKey)}
-							className="flex items-center gap-1.5 bg-[#222] hover:bg-[#2a2a2a] disabled:opacity-50 text-white text-xs font-medium px-3 py-2 rounded-xl active:scale-95 transition-transform"
-						>
-							{testing ? (
-								<Loader2 size={12} className="animate-spin" />
-							) : (
-								<Zap size={12} />
-							)}
-							Test
-						</button>
-						{groqKey && (
-							<button
-								onClick={handleClearGroq}
-								className="flex items-center gap-1.5 bg-[#222] hover:bg-red-950/40 text-gray-400 hover:text-red-400 text-xs font-medium px-3 py-2 rounded-xl active:scale-95 transition-colors"
-							>
-								<Trash2 size={12} />
-								Clear Groq
-							</button>
-						)}
-						{openrouterKey && (
-							<button
-								onClick={handleClearOpenRouter}
-								className="flex items-center gap-1.5 bg-[#222] hover:bg-red-950/40 text-gray-400 hover:text-red-400 text-xs font-medium px-3 py-2 rounded-xl active:scale-95 transition-colors"
-							>
-								<Trash2 size={12} />
-								Clear OR
-							</button>
-						)}
-						<a
-							href="https://console.groq.com/keys"
-							target="_blank"
-							rel="noreferrer noopener"
-							className="ml-auto flex items-center gap-1 text-[10px] text-[#387aff] hover:underline"
-						>
-							Groq key
-							<ExternalLink size={10} />
-						</a>
-						<a
-							href="https://openrouter.ai/keys"
-							target="_blank"
-							rel="noreferrer noopener"
-							className="flex items-center gap-1 text-[10px] text-blue-400 hover:underline"
-						>
-							OR key
-							<ExternalLink size={10} />
-						</a>
-					</div>
-
-					{testResult && (
-						<div
-							className={`flex items-center gap-2 text-[11px] ${
-								testResult.ok ? "text-green-400" : "text-red-400"
-							}`}
-						>
-							{testResult.ok ? (
-								<Check size={12} />
-							) : (
-								<X size={12} />
-							)}
-							<span className="font-mono break-all">
-								{testResult.msg}
+			<h2 className="mb-3 mt-8 px-1 text-[15px] font-semibold uppercase tracking-[0.08em] text-[#77777d]">
+				{isRu ? "Безопасность" : "Security"}
+			</h2>
+			<section className="overflow-hidden rounded-[28px] border border-white/[0.04] bg-[#1c1c1e]">
+				{!seedRevealed ? (
+					<SettingsRow
+						icon={
+							<SettingsIcon className="bg-gradient-to-br from-[#f2a43c] to-[#d66d19]">
+								<Key size={24} strokeWidth={2.2} />
+							</SettingsIcon>
+						}
+						title={t("view_seed")}
+						value={isRu ? "24 слова" : "24 words"}
+						onClick={handleViewSeed}
+					/>
+				) : (
+					<div className="p-4">
+						<div className="mb-3 flex items-center gap-3">
+							<SettingsIcon className="bg-gradient-to-br from-[#f2a43c] to-[#d66d19]">
+								<Key size={24} />
+							</SettingsIcon>
+							<span className="text-[17px] font-semibold">
+								{isRu ? "Seed-фраза из 24 слов" : "24-word seed phrase"}
 							</span>
 						</div>
-					)}
-				</div>
-
-				<div className="bg-[#111] border border-[#222] rounded-2xl p-4 flex flex-col gap-4">
-					{!seedRevealed ? (
-						<button
-							onClick={handleViewSeed}
-							className="flex items-center gap-3 w-full text-left text-sm font-medium text-gray-300 hover:text-white transition-colors"
-						>
-							<Key size={20} className="text-gray-400" />
-							{t("view_seed")}
-						</button>
-					) : (
-						<div>
-							<div className="flex items-center gap-3 mb-3">
-								<Key size={20} className="text-green-500" />
-								<span className="text-sm font-semibold">
-									Your 24-Word Seed Phrase
-								</span>
-							</div>
-							<div className="bg-black p-4 rounded-xl border border-red-900/30 font-mono text-xs leading-relaxed text-red-500 selectable-text select-text">
-								{mnemonic.join(" ")}
-							</div>
+						<div className="selectable-text select-text rounded-2xl border border-red-500/15 bg-[#111113] p-4 font-mono text-xs leading-relaxed text-[#ff6961]">
+							{mnemonic.join(" ")}
 						</div>
-					)}
-				</div>
+					</div>
+				)}
+			</section>
 
-				<button
-					onClick={handleWipeWallet}
-					className="w-full bg-[#111] border border-red-950 hover:bg-[#1a0f0f] p-4 rounded-2xl flex items-center gap-3 text-red-500 transition-colors text-sm font-medium mt-auto"
-				>
-					<LogOut size={20} />
-					{t("logout")}
-				</button>
-			</div>
+			<h2 className="mb-3 mt-8 px-1 text-[15px] font-semibold uppercase tracking-[0.08em] text-[#77777d]">
+				{isRu ? "Опасная зона" : "Danger zone"}
+			</h2>
+			<button
+				onClick={handleWipeWallet}
+				className="flex min-h-[68px] w-full items-center gap-4 rounded-[24px] border border-red-500/10 bg-[#1c1c1e] px-4 text-left text-[#ff5d57] transition-colors hover:bg-[#241819] active:bg-[#2b191a]"
+			>
+				<span className="flex h-11 w-11 items-center justify-center rounded-[13px] bg-[#ff453a]/15">
+					<LogOut size={23} />
+				</span>
+				<span className="flex-1 text-[16px] font-semibold">{t("logout")}</span>
+				<ChevronRight size={22} className="text-[#6d3d3d]" />
+			</button>
 		</motion.div>
 	);
 };

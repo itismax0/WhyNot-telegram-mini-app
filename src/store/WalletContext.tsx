@@ -34,6 +34,7 @@ type ViewState =
 	| "ai";
 type NetworkMode = "mainnet" | "testnet" | "devnet";
 type Language = "en" | "ru";
+type Currency = "usd" | "eur" | "rub";
 
 export const getCloudItem = (key: string): Promise<string | null> => {
 	return new Promise((resolve) => {
@@ -146,6 +147,7 @@ export const translations: Record<Language, Record<string, string>> = {
 		settings: "Settings",
 		network: "Network Mode",
 		language: "Language",
+		currency: "Currency",
 		view_seed: "View Seed Phrase",
 		logout: "Log Out / Wipe Wallet",
 		mainnet: "Mainnet",
@@ -210,6 +212,7 @@ export const translations: Record<Language, Record<string, string>> = {
 		settings: "Настройки",
 		network: "Режим Сети",
 		language: "Язык",
+		currency: "Валюта",
 		view_seed: "Показать сид-фразу",
 		logout: "Выйти / Удалить кошелек",
 		mainnet: "Основная сеть",
@@ -275,6 +278,8 @@ interface WalletContextType {
 	setNetworkMode: (m: NetworkMode) => void;
 	language: Language;
 	setLanguage: (l: Language) => void;
+	baseCurrency: Currency;
+	setBaseCurrency: (c: Currency) => void;
 	t: (key: string) => string;
 	tempPin: string;
 	setTempPin: (pin: string) => void;
@@ -292,8 +297,8 @@ interface WalletContextType {
 	biometricType: "faceid" | "fingerprint" | "biometrics" | null;
 }
 
-type WalletDataContextType = Omit<WalletContextType, "setView" | "setWallets" | "setBalances" | "setRates" | "setChanges" | "setMnemonic" | "showToast" | "setNetworkMode" | "setLanguage" | "setTempPin" | "setSeedRevealed" | "setSelectedAsset" | "setGroqKey" | "setOpenrouterKey" | "setBiometricEnabled">;
-type WalletActionsContextType = Pick<WalletContextType, "setView" | "setWallets" | "setBalances" | "setRates" | "setChanges" | "setMnemonic" | "showToast" | "setNetworkMode" | "setLanguage" | "setTempPin" | "setSeedRevealed" | "setSelectedAsset" | "setGroqKey" | "setOpenrouterKey" | "setBiometricEnabled">;
+type WalletDataContextType = Omit<WalletContextType, "setView" | "setWallets" | "setBalances" | "setRates" | "setChanges" | "setMnemonic" | "showToast" | "setNetworkMode" | "setLanguage" | "setBaseCurrency" | "setTempPin" | "setSeedRevealed" | "setSelectedAsset" | "setGroqKey" | "setOpenrouterKey" | "setBiometricEnabled">;
+type WalletActionsContextType = Pick<WalletContextType, "setView" | "setWallets" | "setBalances" | "setRates" | "setChanges" | "setMnemonic" | "showToast" | "setNetworkMode" | "setLanguage" | "setBaseCurrency" | "setTempPin" | "setSeedRevealed" | "setSelectedAsset" | "setGroqKey" | "setOpenrouterKey" | "setBiometricEnabled">;
 
 const WalletDataContext = createContext<WalletDataContextType>({} as WalletDataContextType);
 const WalletActionsContext = createContext<WalletActionsContextType>({} as WalletActionsContextType);
@@ -308,6 +313,7 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 	const [toast, setToast] = useState<string | null>(null);
 	const [networkMode, setNetworkModeState] = useState<NetworkMode>("mainnet");
 	const [language, setLanguageState] = useState<Language>("en");
+	const [baseCurrency, setBaseCurrencyState] = useState<Currency>("usd");
 	const [tempPin, setTempPin] = useState<string>("");
 	const [seedRevealed, setSeedRevealed] = useState<boolean>(false);
 	const [selectedAsset, setSelectedAsset] = useState<any>(null);
@@ -322,6 +328,10 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 		if (savedLang) setLanguageState(savedLang);
 		const savedNet = localStorage.getItem("wallet_net") as NetworkMode;
 		if (savedNet) setNetworkModeState(savedNet);
+		const savedCurrency = localStorage.getItem("wallet_currency") as Currency;
+		if (savedCurrency === "usd" || savedCurrency === "eur" || savedCurrency === "rub") {
+			setBaseCurrencyState(savedCurrency);
+		}
 		const savedGroq = localStorage.getItem("whynot_groq_key");
 		if (savedGroq) setGroqKeyState(savedGroq);
 		const savedOr = localStorage.getItem("whynot_openrouter_key");
@@ -354,6 +364,11 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 	const setNetworkMode = useCallback((m: NetworkMode) => {
 		setNetworkModeState(m);
 		localStorage.setItem("wallet_net", m);
+	}, []);
+
+	const setBaseCurrency = useCallback((c: Currency) => {
+		setBaseCurrencyState(c);
+		localStorage.setItem("wallet_currency", c);
 	}, []);
 
 	const setGroqKey = useCallback((k: string | null) => {
@@ -408,6 +423,7 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 			toast,
 			networkMode,
 			language,
+			baseCurrency,
 			t,
 			tempPin,
 			seedRevealed,
@@ -418,7 +434,7 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 			biometricAvailable,
 			biometricType,
 		}),
-		[view, wallets, balances, rates, changes, mnemonic, toast, networkMode, language, t, tempPin, seedRevealed, selectedAsset, groqKey, openrouterKey, biometricEnabled, biometricAvailable, biometricType]
+		[view, wallets, balances, rates, changes, mnemonic, toast, networkMode, language, baseCurrency, t, tempPin, seedRevealed, selectedAsset, groqKey, openrouterKey, biometricEnabled, biometricAvailable, biometricType]
 	);
 
 	const actionsValue = useMemo<WalletActionsContextType>(
@@ -432,6 +448,7 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 			showToast,
 			setNetworkMode,
 			setLanguage,
+			setBaseCurrency,
 			setTempPin,
 			setSeedRevealed,
 			setSelectedAsset,
@@ -439,7 +456,7 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 			setOpenrouterKey,
 			setBiometricEnabled,
 		}),
-		[setView, setWallets, setBalances, setRates, setChanges, setMnemonic, showToast, setNetworkMode, setLanguage, setTempPin, setSeedRevealed, setSelectedAsset, setGroqKey, setOpenrouterKey, setBiometricEnabled]
+		[setView, setWallets, setBalances, setRates, setChanges, setMnemonic, showToast, setNetworkMode, setLanguage, setBaseCurrency, setTempPin, setSeedRevealed, setSelectedAsset, setGroqKey, setOpenrouterKey, setBiometricEnabled]
 	);
 
 

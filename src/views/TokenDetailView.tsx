@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useWallet } from "../store/WalletContext";
 import { cachedFetch } from "../utils/cache";
+import { formatFiat } from "../utils/fiat";
 
 // Binance spot symbol for each token
 const BINANCE_SYMBOLS: Record<string, string> = {
@@ -122,10 +123,10 @@ interface NewsItem {
 	publishedAt: number;
 }
 
-function fmt(n: number) {
-	if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
-	if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
-	return `$${n.toLocaleString()}`;
+function fmt(n: number, currency: "usd" | "eur" | "rub") {
+	if (n >= 1e9) return `${formatFiat(n / 1e9, currency, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}B`;
+	if (n >= 1e6) return `${formatFiat(n / 1e6, currency, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}M`;
+	return formatFiat(n, currency);
 }
 
 function fmtNum(n: number) {
@@ -218,7 +219,7 @@ function SparklineChart({
 }
 
 export const TokenDetailView = () => {
-	const { setView, selectedAsset, language, rates, balances } = useWallet();
+	const { setView, selectedAsset, language, rates, balances, baseCurrency } = useWallet();
 	const asset = selectedAsset;
 	const isRu = language === "ru";
 
@@ -435,14 +436,14 @@ export const TokenDetailView = () => {
 	const statsGrid = [
 		{
 			label: isRu ? "Рыночная капитализация" : "Market Cap",
-			val: marketCap ? fmt(marketCap) : "—",
+			val: marketCap ? fmt(marketCap, baseCurrency) : "—",
 			sub: change24h !== null ? `${isPositive ? "+" : ""}${change24h.toFixed(2)}%` : "",
 			subColor: isPositive ? "#30d158" : "#ff453a",
 			icon: <BarChart3 size={16} />,
 		},
 		{
 			label: isRu ? "Объём (24ч)" : "Volume (24h)",
-			val: vol24h ? fmt(vol24h) : "—",
+			val: vol24h ? fmt(vol24h, baseCurrency) : "—",
 			sub: "",
 			subColor: "",
 			icon: <Clock size={16} />,
@@ -484,10 +485,14 @@ export const TokenDetailView = () => {
 			? `${isPositive ? "+" : ""}${change24h.toFixed(2)}% ${isRu ? "за 24ч" : "in 24h"}`
 			: "";
 
-	const activePriceFormatted = activePrice >= 1
-		? activePrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-		: activePrice.toFixed(6);
-	const activePriceSecFormatted = activePrice >= 1 ? activePrice.toFixed(2) : activePrice.toFixed(6);
+	const activePriceFormatted = formatFiat(activePrice, baseCurrency, {
+		minimumFractionDigits: activePrice >= 1 ? 2 : 6,
+		maximumFractionDigits: activePrice >= 1 ? 2 : 6,
+	});
+	const activePriceSecFormatted = formatFiat(activePrice, baseCurrency, {
+		minimumFractionDigits: activePrice >= 1 ? 2 : 6,
+		maximumFractionDigits: activePrice >= 1 ? 2 : 6,
+	});
 
 	return (
 		<motion.div
@@ -548,10 +553,10 @@ export const TokenDetailView = () => {
 							<p className="text-[12px] text-gray-500 mb-1 uppercase tracking-wider">{isRu ? "Цена" : "Price"}</p>
 							<div className="flex items-end justify-between mb-1">
 								<h2 className="text-[34px] font-semibold tracking-tight leading-none">
-									${activePriceFormatted}
+									{activePriceFormatted}
 								</h2>
 								<span className="text-[12px] font-mono font-semibold bg-[#1c1c1e] px-2.5 py-1 rounded-xl text-gray-300">
-									${activePriceSecFormatted}
+									{activePriceSecFormatted}
 								</span>
 							</div>
 
@@ -735,7 +740,7 @@ export const TokenDetailView = () => {
 								{ label: isRu ? "Сеть" : "Network", val: networkName },
 								{ label: isRu ? "Рейтинг" : "Rank", val: cmcRank ? `#${cmcRank}` : "—" },
 								{ label: isRu ? "Мой баланс" : "My Balance", val: `${myBal.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${asset.symbol}` },
-								{ label: isRu ? "Стоимость" : "Value", val: `$${(myBal * price).toFixed(2)}` },
+								{ label: isRu ? "Стоимость" : "Value", val: formatFiat(myBal * price, baseCurrency) },
 							].map(row => (
 								<div key={row.label} className="flex justify-between items-center border-b border-[#1c1c1e] last:border-0 pb-2.5 last:pb-0">
 									<span className="text-[13px] text-gray-500">{row.label}</span>
@@ -784,7 +789,7 @@ export const TokenDetailView = () => {
 							<div className="pt-1 space-y-2">
 								<div className="flex justify-between text-[13px]">
 									<span className="text-gray-500">{isRu ? "Капитализация" : "Market Cap"}</span>
-									<span className="font-semibold">{marketCap ? fmt(marketCap) : "—"}</span>
+			<span className="font-semibold">{marketCap ? fmt(marketCap, baseCurrency) : "—"}</span>
 								</div>
 								<div className="flex justify-between text-[13px]">
 									<span className="text-gray-500">{isRu ? "Рейтинг" : "Rank"}</span>

@@ -60,15 +60,19 @@ export async function fetchJettonBalance(
 		}
 
 		const balRes = await fetchWithRetry(
-			`${base}/getAddressBalance?address=${encodeURIComponent(
+			`${base}/runGetMethod?address=${encodeURIComponent(
 				jettonWalletAddress
-			)}`
+			)}&method=get_wallet_data&stack=[]`
 		);
 		if (!balRes.ok) {
-			throw new Error(`getAddressBalance ${balRes.status}`);
+			throw new Error(`get_wallet_data ${balRes.status}`);
 		}
 		const balData = await balRes.json();
-		const rawBalance = balData?.ok ? Number(balData.result || 0) : 0;
+		const rawValue = balData?.result?.stack?.[0]?.[1];
+		const rawBalance =
+			typeof rawValue === "string"
+				? Number(BigInt(rawValue))
+				: 0;
 
 		const decimalsRes = await fetch(
 			`${base}/getTokenData?address=${encodeURIComponent(master)}`

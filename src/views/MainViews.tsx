@@ -26,16 +26,18 @@ import {
 	ExternalLink,
 	RefreshCw,
 	Search,
-	Star,
 	TrendingUp,
-	PartyPopper,
-	Crown,
-	Flame,
-	Candy,
-	Ticket,
-	Heart,
+	Coins,
 } from "lucide-react";
 import { useWallet } from "../store/WalletContext";
+import { fetchJettonBalance } from "../services/jettonBalance";
+import { formatFiat } from "../utils/fiat";
+import {
+	discoverTonJettons,
+	getWalletAssets,
+	saveWalletAssets,
+	type WalletAsset,
+} from "../services/walletAssets";
 
 import {
 	ASSETS,
@@ -186,12 +188,21 @@ export const MainView = () => {
 		balances,
 		setBalances,
 		rates,
+		changes,
 		t,
 		setSelectedAsset,
 		networkMode,
 		language,
+		baseCurrency,
 	} = useWallet();
 	const [hide, setHide] = useState(false);
+	const [performancePeriod, setPerformancePeriod] = useState<"24h" | "all">("24h");
+	const [allTimeBaseline, setAllTimeBaseline] = useState<number | null>(null);
+	const [showAllAssets, setShowAllAssets] = useState(false);
+	const [walletAssets, setWalletAssets] = useState<WalletAsset[]>([]);
+	const [walletAssetBalances, setWalletAssetBalances] = useState<
+		Record<string, number>
+	>({});
 	const lastNetworkRef = useRef<string | null>(null);
 
 	useEffect(() => {
@@ -206,9 +217,153 @@ export const MainView = () => {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [wallets?.ton?.address, networkMode]);
 
-	const totalUsd = ASSETS.reduce(
+	useEffect(() => {
+		if (!wallets?.ton?.address) {
+			setWalletAssets([]);
+			setWalletAssetBalances({});
+			return;
+		}
+
+		const assets = getWalletAssets(wallets.ton.address, networkMode);
+		setWalletAssets(assets);
+		setWalletAssetBalances(
+			Object.fromEntries(
+				assets.map((asset) => [asset.id, asset.optimisticBalance || 0])
+			)
+		);
+
+		let cancelled = false;
+		const refreshSavedAssets = Promise.all(
+			assets
+				.filter((asset) => asset.kind === "Jetton")
+				.map(async (asset) => [
+					asset.id,
+					await fetchJettonBalance(
+						asset.address,
+						wallets.ton.address,
+						networkMode
+					),
+				] as const)
+		);
+
+		Promise.all([
+			refreshSavedAssets,
+			discoverTonJettons(wallets.ton.address, networkMode).catch((error) => {
+				console.warn("Jetton discovery failed", error);
+				return [];
+			}),
+		]).then(([savedEntries, discovered]) => {
+			if (cancelled) return;
+
+			const builtInAddresses = new Set(
+				ASSETS.map((asset) => String((asset as any).address || "").toLowerCase())
+					.filter(Boolean)
+			);
+			const discoveredCustom = discovered.filter(
+				({ asset }) => !builtInAddresses.has(asset.address.toLowerCase())
+			);
+			const merged = new Map(
+				assets.map((asset) => [asset.address.toLowerCase(), asset])
+			);
+			discoveredCustom.forEach(({ asset }) => {
+				const previous = merged.get(asset.address.toLowerCase());
+				merged.set(asset.address.toLowerCase(), { ...previous, ...asset });
+			});
+			const nextAssets = Array.from(merged.values());
+			setWalletAssets(nextAssets);
+			saveWalletAssets(wallets.ton.address, networkMode, nextAssets);
+
+			setWalletAssetBalances((current) => ({
+				...current,
+				...Object.fromEntries(
+					savedEntries.filter(([, balance]) => balance > 0)
+				),
+				...Object.fromEntries(
+					discoveredCustom.map(({ asset, balance }) => [asset.id, balance])
+				),
+			}));
+		});
+
+		return () => {
+			cancelled = true;
+		};
+	}, [wallets?.ton?.address, networkMode]);
+
+	const customAssetsUsd = walletAssets.reduce(
+		(total, asset) =>
+			total + (walletAssetBalances[asset.id] || 0) * asset.priceUsd,
+		0
+	);
+	const totalFiat = ASSETS.reduce(
 		(acc, a) => acc + (balances[a.id] || 0) * (rates[a.id] || 0),
 		0
+	) + customAssetsUsd;
+	const additionalWalletAssets = walletAssets.filter((asset) => {
+		const balance = walletAssetBalances[asset.id] ?? asset.optimisticBalance ?? 0;
+		return Number.isFinite(balance) && balance > 0;
+	});
+	const portfolioKey = wallets?.ton?.address
+		? `portfolio_baseline_${networkMode}_${wallets.ton.address}`
+		: null;
+
+	useEffect(() => {
+		if (!portfolioKey) {
+			setAllTimeBaseline(null);
+			return;
+		}
+
+		const savedBaseline = Number(localStorage.getItem(portfolioKey));
+		if (Number.isFinite(savedBaseline) && savedBaseline > 0) {
+			setAllTimeBaseline(savedBaseline);
+			return;
+		}
+
+		if (totalFiat > 0) {
+			localStorage.setItem(portfolioKey, String(totalFiat));
+			setAllTimeBaseline(totalFiat);
+		} else {
+			setAllTimeBaseline(null);
+		}
+	}, [portfolioKey, totalFiat]);
+
+	const previous24hUsd = ASSETS.reduce((total, asset) => {
+		const currentValue = (balances[asset.id] || 0) * (rates[asset.id] || 0);
+		const change = changes[asset.id] || 0;
+		const multiplier = 1 + change / 100;
+		return total + (multiplier > 0 ? currentValue / multiplier : currentValue);
+	}, 0);
+	const change24hUsd = totalFiat - previous24hUsd;
+	const change24hPercent =
+		previous24hUsd > 0 ? (change24hUsd / previous24hUsd) * 100 : 0;
+	const allTimeChangeUsd =
+		allTimeBaseline !== null ? totalFiat - allTimeBaseline : 0;
+	const allTimeChangePercent =
+		allTimeBaseline && allTimeBaseline > 0
+			? (allTimeChangeUsd / allTimeBaseline) * 100
+			: 0;
+	const performanceUsd =
+		performancePeriod === "24h" ? change24hUsd : allTimeChangeUsd;
+	const performancePercent =
+		performancePeriod === "24h" ? change24hPercent : allTimeChangePercent;
+	const performancePositive = performanceUsd >= 0;
+	const performanceLocale = language === "ru" ? "ru-RU" : "en-US";
+	const formatPerformanceAmount = (value: number) => {
+		const absolute = Math.abs(value);
+		if (absolute > 0 && absolute < 0.01) {
+			return `${value < 0 ? "-" : ""}<${formatFiat(0.01, baseCurrency)}`;
+		}
+		const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+		return `${sign}${formatFiat(absolute, baseCurrency, {
+			minimumFractionDigits: 2,
+			maximumFractionDigits: 2,
+		})}`;
+	};
+	const formattedPerformancePercent = Math.abs(performancePercent).toLocaleString(
+		performanceLocale,
+		{
+			minimumFractionDigits: 2,
+			maximumFractionDigits: 2,
+		}
 	);
 
 	return (
@@ -230,11 +385,11 @@ export const MainView = () => {
 				</button>
 			</div>
 
-			<div className="flex flex-col items-center mb-10">
-				<h1 className="text-[2.75rem] font-medium tracking-tight mb-2 flex items-center gap-3">
+			<div className="flex flex-col items-center mb-7">
+				<h1 className="text-[2.75rem] font-medium tracking-tight mb-1 flex items-center gap-3">
 					{hide
 						? "****"
-						: `$${totalUsd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+						: formatFiat(totalFiat, baseCurrency)}
 					<button
 						onClick={() => setHide(!hide)}
 						className="text-gray-500 hover:text-white transition-colors"
@@ -245,9 +400,55 @@ export const MainView = () => {
 				<p className="text-gray-500 text-sm font-mono uppercase tracking-wider">
 					{t("total_balance")}
 				</p>
+				<motion.button
+					type="button"
+					onClick={() => {
+						setPerformancePeriod((current) => (current === "24h" ? "all" : "24h"));
+						(window as any).Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
+					}}
+					whileTap={{ scale: 0.96 }}
+					className="mt-2 flex items-center justify-center gap-3 rounded-full px-3 py-1.5 text-sm font-semibold"
+					aria-label={
+						language === "ru"
+							? "Переключить период доходности"
+							: "Switch performance period"
+					}
+				>
+					<AnimatePresence mode="wait" initial={false}>
+						<motion.span
+							key={`${performancePeriod}-amount`}
+							initial={{ opacity: 0, y: 4 }}
+							animate={{ opacity: 1, y: 0 }}
+							exit={{ opacity: 0, y: -4 }}
+							transition={{ duration: 0.16 }}
+							className={performancePositive ? "text-[#32c766]" : "text-[#ff5a52]"}
+						>
+							{hide ? "***" : formatPerformanceAmount(performanceUsd)}
+						</motion.span>
+					</AnimatePresence>
+					<span
+						className={`rounded-full px-2.5 py-1 ${
+							performancePositive
+								? "bg-[#183822]/80 text-[#32c766]"
+								: "bg-[#3a2020]/80 text-[#ff5a52]"
+						}`}
+					>
+						{performancePositive ? "↑" : "↓"}{" "}
+						{hide ? "***" : `${formattedPerformancePercent}%`}
+					</span>
+					<span className="text-[#8e8e93]">
+						{performancePeriod === "24h"
+							? language === "ru"
+								? "24 ч"
+								: "24 h"
+							: language === "ru"
+								? "За всё время"
+								: "All time"}
+					</span>
+				</motion.button>
 			</div>
 
-			<div className="flex justify-center gap-8 mb-10">
+			<div className="flex justify-center gap-8 mb-8">
 				{[
 					{
 						id: "receive",
@@ -320,13 +521,83 @@ export const MainView = () => {
 										{asset.symbol}
 									</h4>
 									<p className="text-xs text-gray-500 font-mono">
-										{hide ? "***" : `$${usdVal.toFixed(2)}`}
+										{hide ? "***" : formatFiat(usdVal, baseCurrency)}
 									</p>
 								</div>
 							</div>
 						);
 					})}
+					<AnimatePresence initial={false}>
+						{showAllAssets &&
+							additionalWalletAssets.map((asset) => {
+								const balance = walletAssetBalances[asset.id] || 0;
+								const usdValue = balance * asset.priceUsd;
+								return (
+									<motion.div
+										key={asset.id}
+										initial={{ opacity: 0, height: 0, y: -8 }}
+										animate={{ opacity: 1, height: "auto", y: 0 }}
+										exit={{ opacity: 0, height: 0, y: -8 }}
+										className="flex items-center justify-between overflow-hidden p-4 bg-[#0a0a0a] rounded-2xl border border-[#1a1a1a]"
+									>
+										<div className="flex items-center gap-4 min-w-0">
+											<img
+												src={asset.icon}
+												alt={asset.symbol}
+												className="w-12 h-12 rounded-full bg-[#111] object-contain p-2 border border-[#1a1a1a]"
+											/>
+											<div className="min-w-0">
+												<h4 className="font-semibold text-base mb-0.5 truncate">
+													{asset.name}
+												</h4>
+												<p className="text-[11px] text-gray-500 font-mono uppercase">
+													{asset.network}
+												</p>
+											</div>
+										</div>
+										<div className="text-right ml-3">
+											<h4 className="font-semibold text-base mb-0.5">
+												{hide ? "***" : balance.toLocaleString()} {asset.symbol}
+											</h4>
+											<p className="text-xs text-gray-500 font-mono">
+												{hide
+													? "***"
+													: asset.priceUsd > 0
+														? formatFiat(usdValue, baseCurrency)
+														: "—"}
+											</p>
+										</div>
+									</motion.div>
+								);
+							})}
+					</AnimatePresence>
 				</div>
+
+				<button
+					type="button"
+					onClick={() => setShowAllAssets((current) => !current)}
+					className="mt-3 w-full flex items-center gap-3 rounded-2xl bg-[#111] border border-[#222] px-4 py-4 text-left active:scale-[0.98] transition-all"
+				>
+					<Coins size={24} className="text-[#2f9bff]" />
+					<span className="flex-1 text-[15px] font-semibold text-[#2f9bff]">
+						{showAllAssets
+							? language === "ru"
+								? "Скрыть дополнительные активы"
+								: "Hide additional assets"
+							: language === "ru"
+								? "Показать все активы"
+								: "Show all assets"}
+					</span>
+					<span className="rounded-md bg-[#16304a] px-2 py-0.5 text-sm font-bold text-[#2f9bff]">
+						{additionalWalletAssets.length}
+					</span>
+					<ChevronRight
+						size={18}
+						className={`text-[#2f9bff] transition-transform ${
+							showAllAssets ? "rotate-90" : ""
+						}`}
+					/>
+				</button>
 
 				<button
 					onClick={() => setView("ai")}
@@ -423,6 +694,7 @@ export const ConfirmView = ({
 	language,
 	t,
 	rates,
+	baseCurrency,
 	assetDetails,
 }: {
 	asset: any;
@@ -434,6 +706,7 @@ export const ConfirmView = ({
 	language: string;
 	t: (k: string) => string;
 	rates: Record<string, number>;
+	baseCurrency: "usd" | "eur" | "rub";
 	assetDetails: any;
 }) => {
 	const conversionRate = rates[asset.id] || 0;
@@ -508,11 +781,7 @@ export const ConfirmView = ({
 						</span>
 					</div>
 					<p className="text-[14px] text-[#8e8e93]">
-						≈ $
-						{usdEquivalent.toLocaleString("en-US", {
-							minimumFractionDigits: 2,
-							maximumFractionDigits: 2,
-						})}
+						≈ {formatFiat(usdEquivalent, baseCurrency)}
 					</p>
 				</div>
 
@@ -622,6 +891,7 @@ export const SuccessView = ({
 	language,
 	t,
 	rates,
+	baseCurrency,
 	assetDetails,
 }: {
 	asset: any;
@@ -631,6 +901,7 @@ export const SuccessView = ({
 	language: string;
 	t: (k: string) => string;
 	rates: Record<string, number>;
+	baseCurrency: "usd" | "eur" | "rub";
 	assetDetails: any;
 }) => {
 	const conversionRate = rates[asset.id] || 0;
@@ -771,11 +1042,7 @@ export const SuccessView = ({
 							{amount || "0"} {asset.symbol}
 						</div>
 						<div className="text-[12px] text-[#8e8e93] mt-0.5">
-							≈ $
-							{usdEquivalent.toLocaleString("en-US", {
-								minimumFractionDigits: 2,
-								maximumFractionDigits: 2,
-							})}
+							≈ {formatFiat(usdEquivalent, baseCurrency)}
 						</div>
 					</div>
 				</div>
@@ -861,8 +1128,9 @@ export const SendView = () => {
 		showToast,
 		networkMode,
 		language,
-		rates,
-		t,
+	rates,
+	t,
+	baseCurrency,
 	} = useWallet();
 	const [asset, setAsset] = useState(ASSETS[0]);
 	const [address, setAddress] = useState("");
@@ -1008,6 +1276,7 @@ export const SendView = () => {
 					language={language}
 					t={t}
 					rates={rates}
+					baseCurrency={baseCurrency}
 					assetDetails={assetDetails}
 				/>
 			)}
@@ -1022,6 +1291,7 @@ export const SendView = () => {
 					language={language}
 					t={t}
 					rates={rates}
+					baseCurrency={baseCurrency}
 					assetDetails={assetDetails}
 				/>
 			)}
@@ -1102,11 +1372,7 @@ export const SendView = () => {
 									className="w-full bg-transparent text-[32px] font-semibold outline-none placeholder-gray-800 text-white select-text font-sans"
 								/>
 								<p className="text-[13px] text-[#8e8e93] mt-0.5 font-sans">
-									≈ $
-									{usdEquivalent.toLocaleString("en-US", {
-										minimumFractionDigits: 2,
-										maximumFractionDigits: 2,
-									})}
+									≈ {formatFiat(usdEquivalent, baseCurrency)}
 								</p>
 							</div>
 							<div className="relative">
@@ -1874,45 +2140,9 @@ export const TonBrowserView = () => {
 };
 
 export const TonStakingView = () => {
-	const { setView, language, wallets, balances, rates, showToast } = useWallet();
-	const [amount, setAmount] = useState("");
-	const [validator, setValidator] = useState("Whales");
-	const [positions, setPositions] = useState<Array<{ id: number; amount: number; validator: string; createdAt: number }>>(() => {
-		try {
-			return JSON.parse(localStorage.getItem("ton_staking_positions") || "[]");
-		} catch {
-			return [];
-		}
-	});
-	const apy = 4.8;
-	const amountNum = Number(amount || 0);
-	const yearly = amountNum > 0 ? (amountNum * apy) / 100 : 0;
-	const tonPrice = rates.ton || 0;
-
-	useEffect(() => {
-		localStorage.setItem("ton_staking_positions", JSON.stringify(positions));
-	}, [positions]);
-
-	const addPosition = () => {
-		if (!wallets?.ton?.address) {
-			showToast(language === "ru" ? "Сначала создайте кошелек" : "Create wallet first");
-			return;
-		}
-		if (!amountNum || amountNum <= 0) {
-			showToast(language === "ru" ? "Введите сумму TON" : "Enter TON amount");
-			return;
-		}
-		if (amountNum > (balances.ton || 0)) {
-			showToast(language === "ru" ? "Недостаточно TON" : "Not enough TON");
-			return;
-		}
-		setPositions((prev) => [
-			{ id: Date.now(), amount: amountNum, validator, createdAt: Date.now() },
-			...prev,
-		]);
-		setAmount("");
-		showToast(language === "ru" ? "Позиция добавлена" : "Position added");
-	};
+	const { setView, language, wallets, balances } = useWallet();
+	const stakingUrl = "https://app.tonstakers.com/";
+	const tonAddress = wallets?.ton?.address || "";
 
 	return (
 		<motion.div
@@ -1933,140 +2163,71 @@ export const TonStakingView = () => {
 				</h2>
 			</div>
 
-			<div className="bg-gradient-to-br from-[#12254f] to-[#070b16] border border-[#1d3b78]/60 rounded-[2rem] p-6 mb-5">
-				<div className="flex items-center justify-between mb-6">
+			<div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-[2rem] p-5 mb-5">
+				<div className="flex items-center justify-between mb-4">
 					<div>
-						<p className="text-xs text-blue-200/70 uppercase font-mono mb-1">TON APY</p>
-						<h3 className="text-4xl font-bold">{apy}%</h3>
+						<p className="text-[11px] text-gray-500 uppercase font-mono mb-1">
+							{language === "ru" ? "Живой сервис" : "Live service"}
+						</p>
+						<h3 className="text-xl font-semibold">Tonstakers</h3>
 					</div>
-					<div className="w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center">
-						<TrendingUp size={32} />
-					</div>
-				</div>
-				<div className="grid grid-cols-2 gap-3 text-sm">
-					<div className="bg-black/20 rounded-2xl p-3">
-						<p className="text-gray-400 text-xs">{language === "ru" ? "Баланс" : "Balance"}</p>
-						<p className="font-semibold">{(balances.ton || 0).toFixed(4)} TON</p>
-					</div>
-					<div className="bg-black/20 rounded-2xl p-3">
-						<p className="text-gray-400 text-xs">{language === "ru" ? "Адрес" : "Address"}</p>
-						<p className="font-mono text-xs truncate">{wallets?.ton?.address || "N/A"}</p>
+					<div className="w-14 h-14 rounded-2xl bg-[#111] border border-[#222] flex items-center justify-center text-[#2f7dff]">
+						<TrendingUp size={28} />
 					</div>
 				</div>
-			</div>
-
-			<div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-[1.5rem] p-4 mb-5">
-				<label className="text-xs text-gray-500 uppercase font-mono mb-2 block">
-					{language === "ru" ? "Сумма" : "Amount"}
-				</label>
-				<div className="flex gap-2 mb-4">
-					<input
-						type="number"
-						value={amount}
-						onChange={(e) => setAmount(e.target.value)}
-						className="flex-1 bg-[#111] border border-[#222] rounded-2xl px-4 py-3 outline-none"
-						placeholder="0.00 TON"
-					/>
-					<button
-						onClick={() => setAmount(String(balances.ton || 0))}
-						className="px-4 bg-[#111] border border-[#222] rounded-2xl text-sm"
-					>
-						MAX
-					</button>
-				</div>
-				<label className="text-xs text-gray-500 uppercase font-mono mb-2 block">
-					{language === "ru" ? "Валидатор" : "Validator"}
-				</label>
-				<div className="grid grid-cols-3 gap-2 mb-4">
-					{["Whales", "TON Nominators", "Tonkeeper"].map((name) => (
-						<button
-							key={name}
-							onClick={() => setValidator(name)}
-							className={`py-2 rounded-xl text-xs border ${
-								validator === name ? "bg-white text-black border-white" : "bg-[#111] text-gray-300 border-[#222]"
-							}`}
-						>
-							{name}
-						</button>
-					))}
-				</div>
-				<div className="flex justify-between text-sm mb-4">
-					<span className="text-gray-500">{language === "ru" ? "Прогноз за год" : "Year estimate"}</span>
-					<span>{yearly.toFixed(4)} TON {tonPrice ? `≈ $${(yearly * tonPrice).toFixed(2)}` : ""}</span>
+				<p className="text-sm text-gray-400 leading-relaxed mb-4">
+					{language === "ru"
+						? "Открывается реальный TON staking-сервис. Здесь нет фальшивых позиций: стейкинг происходит на стороне Tonstakers."
+						: "This opens the real TON staking service. No fake positions here: staking happens on Tonstakers."}
+				</p>
+				<div className="grid grid-cols-2 gap-3 mb-4">
+					<div className="rounded-2xl bg-[#111] border border-[#222] p-3">
+						<p className="text-[10px] uppercase font-mono text-gray-500 mb-1">
+							{language === "ru" ? "Баланс" : "Balance"}
+						</p>
+						<p className="text-lg font-semibold">
+							{wallets?.ton?.address
+								? `${(balances.ton || 0).toFixed(4)} TON`
+								: "—"}
+						</p>
+					</div>
+					<div className="rounded-2xl bg-[#111] border border-[#222] p-3">
+						<p className="text-[10px] uppercase font-mono text-gray-500 mb-1">
+							{language === "ru" ? "Адрес" : "Address"}
+						</p>
+						<p className="text-xs font-mono text-gray-300 truncate">{tonAddress || "N/A"}</p>
+					</div>
 				</div>
 				<button
-					onClick={addPosition}
+					onClick={() => openExternalLink(stakingUrl)}
 					className="w-full py-4 bg-white text-black rounded-2xl font-semibold active:scale-95 transition-transform"
 				>
-					{language === "ru" ? "Добавить позицию" : "Add staking position"}
+					{language === "ru" ? "Открыть Tonstakers" : "Open Tonstakers"}
 				</button>
 				<button
-					onClick={() => openExternalLink("https://tonvalidators.org")}
+					onClick={() => openExternalLink("https://tonstakers.com/")}
 					className="w-full mt-3 py-3 bg-[#111] border border-[#222] rounded-2xl text-sm text-gray-300"
 				>
-					{language === "ru" ? "Открыть валидаторов TON" : "Open TON validators"}
+					{language === "ru" ? "Сайт Tonstakers" : "Tonstakers website"}
 				</button>
 			</div>
 
-			<div className="space-y-3">
-				<h3 className="text-sm text-gray-500 uppercase font-mono px-1">
-					{language === "ru" ? "Мои позиции" : "My positions"}
-				</h3>
-				{positions.length === 0 ? (
-					<div className="p-5 bg-[#0a0a0a] border border-[#1a1a1a] rounded-2xl text-sm text-gray-500 text-center">
-						{language === "ru" ? "Пока нет позиций" : "No positions yet"}
-					</div>
-				) : positions.map((pos) => (
-					<div key={pos.id} className="p-4 bg-[#0a0a0a] border border-[#1a1a1a] rounded-2xl flex items-center justify-between">
-						<div>
-							<p className="font-semibold">{pos.amount.toFixed(4)} TON</p>
-							<p className="text-xs text-gray-500">{pos.validator}</p>
-						</div>
-						<button
-							onClick={() => setPositions((prev) => prev.filter((p) => p.id !== pos.id))}
-							className="px-3 py-2 bg-[#111] border border-[#222] rounded-xl text-xs text-gray-300"
-						>
-							{language === "ru" ? "Снять" : "Unstake"}
-						</button>
-					</div>
-				))}
+			<div className="flex-1 rounded-[1.75rem] border border-[#1a1a1a] bg-[#080808] overflow-hidden min-h-[520px]">
+				<iframe
+					title="Tonstakers"
+					src={stakingUrl}
+					className="w-full h-full min-h-[520px] bg-[#080808]"
+					loading="lazy"
+					referrerPolicy="no-referrer"
+				/>
 			</div>
 		</motion.div>
 	);
 };
 
 export const TelegramGiftsView = () => {
-	const { setView, language, showToast } = useWallet();
-	const gifts = [
-		{ id: "ball", name: "Crystal Ball", floor: "350+", url: "https://fragment.com/gifts", icon: Heart, colors: "from-[#7c3aed] to-[#4c1d95]", ribbon: language === "ru" ? "маркет" : "market" },
-		{ id: "torch", name: "Torch", floor: "387+", url: "https://fragment.com/gifts", icon: Flame, colors: "from-[#1f9d7a] to-[#065f46]", ribbon: language === "ru" ? "маркет" : "market" },
-		{ id: "flamingo", name: "Flamingo", floor: "370+", url: "https://fragment.com/gifts", icon: Candy, colors: "from-[#f472b6] to-[#db2777]", ribbon: language === "ru" ? "маркет" : "market" },
-		{ id: "noodles", name: "Hot Noodles", floor: "375+", url: "https://fragment.com/gifts", icon: Ticket, colors: "from-[#f59e0b] to-[#b45309]", ribbon: language === "ru" ? "маркет" : "market" },
-		{ id: "dog", name: "Doggo", floor: "690+", url: "https://fragment.com/gifts", icon: Crown, colors: "from-[#fbbf24] to-[#92400e]", ribbon: language === "ru" ? "маркет" : "market" },
-		{ id: "popsicle", name: "Popsicle", floor: "439+", url: "https://fragment.com/gifts", icon: Gift, colors: "from-[#7c2d12] to-[#3f1d0a]", ribbon: language === "ru" ? "маркет" : "market" },
-		{ id: "lollipop", name: "Lollipop", floor: "380+", url: "https://fragment.com/gifts", icon: PartyPopper, colors: "from-[#06b6d4] to-[#0f766e]", ribbon: language === "ru" ? "маркет" : "market" },
-		{ id: "backpack", name: "Backpack", floor: "528+", url: "https://fragment.com/gifts", icon: Star, colors: "from-[#60a5fa] to-[#1e3a8a]", ribbon: language === "ru" ? "маркет" : "market" },
-		{ id: "cash", name: "Cash Pack", floor: "560+", url: "https://fragment.com/gifts", icon: Sparkles, colors: "from-[#10b981] to-[#14532d]", ribbon: language === "ru" ? "маркет" : "market" },
-		{ id: "cupcake", name: "Cupcake", floor: "359+", url: "https://fragment.com/gifts", icon: Gift, colors: "from-[#fb7185] to-[#9f1239]", ribbon: language === "ru" ? "маркет" : "market" },
-		{ id: "poop", name: "Funny Pile", floor: "440+", url: "https://fragment.com/gifts", icon: Heart, colors: "from-[#84cc16] to-[#365314]", ribbon: language === "ru" ? "маркет" : "market" },
-		{ id: "candycane", name: "Candy Cane", floor: "380+", url: "https://fragment.com/gifts", icon: Candy, colors: "from-[#14b8a6] to-[#0f766e]", ribbon: language === "ru" ? "маркет" : "market" },
-	];
-	const [favorites, setFavorites] = useState<string[]>(() => {
-		try {
-			return JSON.parse(localStorage.getItem("telegram_gift_favorites") || "[]");
-		} catch {
-			return [];
-		}
-	});
-
-	useEffect(() => {
-		localStorage.setItem("telegram_gift_favorites", JSON.stringify(favorites));
-	}, [favorites]);
-
-	const toggleFavorite = (id: string) => {
-		setFavorites((prev) => prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]);
-		showToast(language === "ru" ? "Избранное обновлено" : "Favorites updated");
-	};
+	const { setView, language } = useWallet();
+	const getgemsUrl = "https://getgems.io/";
 
 	return (
 		<motion.div
@@ -2085,75 +2246,40 @@ export const TelegramGiftsView = () => {
 				<h2 className="font-medium text-lg">Telegram gifts</h2>
 			</div>
 
-			<div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-[2rem] p-6 mb-5">
-				<div className="w-16 h-16 bg-[#111] rounded-2xl flex items-center justify-center text-[#2f7dff] border border-[#222] mb-5">
-					<Gift size={32} />
+			<div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-[2rem] p-5 mb-5">
+				<div className="flex items-center justify-between mb-4">
+					<div>
+						<p className="text-[11px] text-gray-500 uppercase font-mono mb-1">
+							{language === "ru" ? "Живой маркет" : "Live marketplace"}
+						</p>
+						<h3 className="text-xl font-semibold">Getgems</h3>
+					</div>
+					<div className="w-14 h-14 rounded-2xl bg-[#111] border border-[#222] flex items-center justify-center text-[#2f7dff]">
+						<Gift size={28} />
+					</div>
 				</div>
-				<h3 className="text-2xl font-bold mb-2">
-					{language === "ru" ? "Подарки Telegram" : "Telegram Gifts"}
-				</h3>
-				<p className="text-sm text-gray-400 leading-relaxed">
+				<p className="text-sm text-gray-400 leading-relaxed mb-4">
 					{language === "ru"
-						? "Следите за цифровыми подарками, сохраняйте избранное и переходите на маркетплейс Fragment."
-						: "Track digital gifts, save favorites, and jump to the Fragment marketplace."}
+						? "Открывается реальный Getgems. Если сайт не даст встроиться, он всё равно откроется во встроенном браузере Telegram."
+						: "This opens the real Getgems site. If embedding is blocked, it will still open in Telegram's built-in browser."}
 				</p>
+				<button
+					onClick={() => openExternalLink(getgemsUrl)}
+					className="w-full py-4 bg-white text-black rounded-2xl font-semibold active:scale-95 transition-transform"
+				>
+					{language === "ru" ? "Открыть Getgems" : "Open Getgems"}
+				</button>
 			</div>
 
-			<div className="grid grid-cols-3 gap-2 mb-5">
-				{gifts.map((gift) => {
-					const favorite = favorites.includes(gift.id);
-					const Icon = gift.icon;
-					return (
-						<div
-							key={gift.id}
-							className={`relative overflow-hidden rounded-[1.25rem] border border-white/10 bg-gradient-to-br ${gift.colors} p-2.5 min-h-[165px] shadow-lg`}
-						>
-							<div className="absolute right-0 top-0">
-								<div className="origin-top-right rotate-45 translate-x-6 -translate-y-1 bg-white/90 text-[#0a0a0a] px-8 py-1 text-[10px] font-bold uppercase tracking-wide">
-									{gift.ribbon}
-								</div>
-							</div>
-							<div className="flex items-center justify-between mb-4">
-								<button
-									onClick={() => toggleFavorite(gift.id)}
-									className={`w-8 h-8 rounded-full flex items-center justify-center ${favorite ? "bg-white text-black" : "bg-white/15 text-white/80"}`}
-								>
-									<Star size={16} fill={favorite ? "currentColor" : "none"} />
-								</button>
-								<div className="text-[10px] font-mono text-white/85 rounded-full bg-black/20 px-2 py-1">
-									#{gift.floor}
-								</div>
-							</div>
-							<div className="flex-1 flex items-center justify-center py-2">
-								<div className="w-[72px] h-[72px] rounded-[1.5rem] bg-black/15 border border-white/15 flex items-center justify-center shadow-inner">
-									<Icon size={30} className="text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.25)]" />
-								</div>
-							</div>
-							<div className="mt-4 flex items-end justify-between gap-2">
-								<div className="min-w-0">
-									<h4 className="font-semibold text-sm text-white truncate">{gift.name}</h4>
-									<p className="text-[11px] text-white/75">
-										{language === "ru" ? "Маркет Fragment" : "Fragment market"}
-									</p>
-								</div>
-								<button
-									onClick={() => openExternalLink(gift.url)}
-									className="shrink-0 rounded-full bg-white text-black px-3 py-2 text-[11px] font-semibold"
-								>
-									{language === "ru" ? "Открыть" : "Open"}
-								</button>
-							</div>
-						</div>
-					);
-				})}
+			<div className="flex-1 rounded-[1.75rem] border border-[#1a1a1a] bg-[#080808] overflow-hidden min-h-[520px]">
+				<iframe
+					title="Getgems"
+					src={getgemsUrl}
+					className="w-full h-full min-h-[520px] bg-[#080808]"
+					loading="lazy"
+					referrerPolicy="no-referrer"
+				/>
 			</div>
-
-			<button
-				onClick={() => openExternalLink("https://fragment.com/gifts")}
-				className="w-full py-4 bg-white text-black rounded-2xl font-semibold active:scale-95 transition-transform"
-			>
-				{language === "ru" ? "Открыть Fragment" : "Open Fragment"}
-			</button>
 		</motion.div>
 	);
 };

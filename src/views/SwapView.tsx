@@ -12,6 +12,7 @@ import {
 	XCircle,
 } from "lucide-react";
 import { useWallet } from "../store/WalletContext";
+import { addWalletAsset } from "../services/walletAssets";
 import { executeSwap, executeSymbiosisSwap, fetchBalances } from "../services/blockchain";
 import {
 	omniston,
@@ -27,6 +28,7 @@ import {
 } from "../services/symbiosis";
 import { TokenPickerModal, type SwapToken } from "./TokenPickerModal";
 import { fetchJettonBalance } from "../services/jettonBalance";
+import { formatFiat } from "../utils/fiat";
 
 type QuoteState = "idle" | "loading" | "ready" | "no_quote" | "error";
 type SwapStage = "form" | "submitting" | "tracking" | "success" | "error";
@@ -154,6 +156,7 @@ export const SwapView = () => {
 		language,
 		showToast,
 		networkMode,
+		baseCurrency,
 	} = useWallet();
 
 	const [fromToken, setFromToken] = useState<SwapToken>(TON_NATIVE_TOKEN);
@@ -486,6 +489,24 @@ export const SwapView = () => {
 						if (status === "trade_settled") {
 							const result = data?.result;
 							if (result === 1 || result === 2) {
+								if (
+									toToken.kind === "Jetton" &&
+									wallets.ton?.address &&
+									!ADDRESS_TO_ID[toToken.address]
+								) {
+									addWalletAsset(wallets.ton.address, networkMode, {
+										id: toToken.address,
+										address: toToken.address,
+										symbol: toToken.symbol,
+										name: toToken.name,
+										icon: toToken.icon,
+										decimals: toToken.decimals,
+										network: toToken.network || "TON",
+										kind: toToken.kind,
+										priceUsd: toToken.priceUsd,
+										optimisticBalance: expectedToAmount,
+									});
+								}
 								setSwapResult({
 									fromAmount: Number(fromAmount),
 									toAmount: expectedToAmount,
@@ -548,6 +569,24 @@ export const SwapView = () => {
 						);
 					if (status?.status === "success") {
 						clearInterval(pollInterval);
+						if (
+							toToken.kind === "Jetton" &&
+							wallets.ton?.address &&
+							!ADDRESS_TO_ID[toToken.address]
+						) {
+							addWalletAsset(wallets.ton.address, networkMode, {
+								id: toToken.address,
+								address: toToken.address,
+								symbol: toToken.symbol,
+								name: toToken.name,
+								icon: toToken.icon,
+								decimals: toToken.decimals,
+								network: toToken.network || "TON",
+								kind: toToken.kind,
+								priceUsd: toToken.priceUsd,
+								optimisticBalance: expectedToAmount,
+							});
+						}
 						setSwapResult({
 							fromAmount: Number(fromAmount),
 							toAmount: expectedToAmount,
@@ -962,11 +1001,7 @@ export const SwapView = () => {
 								className="w-full min-w-0 bg-transparent text-right text-[28px] sm:text-[36px] font-bold outline-none placeholder-[#3a3a3c] text-white select-text font-sans"
 							/>
 							<p className="text-[13px] text-[#8e8e93]">
-								$
-								{usdIn.toLocaleString("en-US", {
-									minimumFractionDigits: 2,
-									maximumFractionDigits: 2,
-								})}
+								{formatFiat(usdIn, baseCurrency)}
 							</p>
 						</div>
 					</div>
@@ -1039,11 +1074,7 @@ export const SwapView = () => {
 								</p>
 							)}
 							<p className="text-[13px] text-[#8e8e93]">
-								$
-								{usdOut.toLocaleString("en-US", {
-									minimumFractionDigits: 2,
-									maximumFractionDigits: 2,
-								})}
+								{formatFiat(usdOut, baseCurrency)}
 							</p>
 						</div>
 					</div>
