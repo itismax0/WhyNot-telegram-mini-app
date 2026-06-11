@@ -27,6 +27,9 @@ type ViewState =
 	| "more"
 	| "vpn"
 	| "cloud"
+	| "browser"
+	| "staking"
+	| "gifts"
 	| "token_detail"
 	| "ai";
 type NetworkMode = "mainnet" | "testnet" | "devnet";
@@ -178,7 +181,7 @@ export const translations: Record<Language, Record<string, string>> = {
 		sum_title: "Amount",
 		transfer_title: "Transfer",
 		biometric_faceid: "Face ID",
-		biometric_fingerprint: "Fingerprint",
+		biometric_fingerprint: "Touch ID",
 		enable_biometric: "Enable Biometrics",
 		ecosystem: "Ecosystem",
 	},
@@ -243,7 +246,7 @@ export const translations: Record<Language, Record<string, string>> = {
 		sum_title: "Сумма",
 		transfer_title: "Перевод",
 		biometric_faceid: "Face ID",
-		biometric_fingerprint: "Отпечаток пальца",
+		biometric_fingerprint: "Touch ID",
 		enable_biometric: "Включить биометрию",
 		biometric_setup_title: "Защитите свой кошелек",
 		biometric_setup_desc: "Используйте {{type}} для быстрого входа и безопасного подтверждения операций.",

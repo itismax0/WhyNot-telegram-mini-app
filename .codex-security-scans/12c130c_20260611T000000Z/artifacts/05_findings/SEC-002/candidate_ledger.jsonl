@@ -1,0 +1,3 @@
+{"phase":"discovery","candidate_id":"SEC-002","status":"candidate","evidence":"finding_discovery_report.md#SEC-002"}
+{"phase":"validation","candidate_id":"SEC-002","disposition":"reportable","method":"static source-to-sink trace with deployment precondition","evidence":"validation_report.md"}
+{"phase":"attack_path","candidate_id":"SEC-002","decision":"reportable","severity":"high","evidence":"attack_path_analysis_report.md"}

@@ -468,6 +468,13 @@ export async function registerUsername(
 	solAddress: string
 ): Promise<boolean> {
 	if (!username) return false;
+	const registryEndpoint = import.meta.env.VITE_USERNAME_REGISTRY_ENDPOINT;
+	if (!registryEndpoint || !registryEndpoint.trim()) {
+		console.warn(
+			"Username registry writes are disabled until a verified backend endpoint is configured"
+		);
+		return false;
+	}
 	const cleanUser = username.replace("@", "").trim().toLowerCase();
 	const cached = getCache<UsernameRegistry>(`username_${cleanUser}`);
 	if (cached && cached.ton === tonAddress && cached.eth === ethAddress && cached.sol === solAddress) {

@@ -7,7 +7,6 @@ import { encryptData, decryptData } from "../services/crypto";
 import {
 	generateWallets,
 	fetchBalances,
-	registerUsername,
 } from "../services/blockchain";
 import { PinPad } from "../components/PinPad";
 import { Icons } from "../icons/Icons";
@@ -65,12 +64,6 @@ export const RestorePromptView = () => {
 		setMnemonic(seed);
 		const generated = await generateWallets(seed);
 		setWallets(generated);
-
-		const tgUser = (window as any).Telegram?.WebApp?.initDataUnsafe?.user
-			?.username;
-		if (tgUser) {
-			await registerUsername(tgUser, generated.ton.address, generated.eth.address, generated.sol.address);
-		}
 
 		if (biometricAvailable) {
 			setView("biometric-setup");
@@ -154,12 +147,6 @@ export const RestoreInputView = () => {
 			setMnemonic(rawWords);
 			const generated = await generateWallets(rawWords);
 			setWallets(generated);
-
-			const tgUser = (window as any).Telegram?.WebApp?.initDataUnsafe
-				?.user?.username;
-			if (tgUser) {
-				await registerUsername(tgUser, generated.ton.address, generated.eth.address, generated.sol.address);
-			}
 
 			if (biometricAvailable) {
 				setView("biometric-setup");
@@ -310,6 +297,16 @@ export const PinManager = () => {
 		t,
 	} = useWallet();
 	const [pin, setPin] = useState("");
+	const [pinAttempts, setPinAttempts] = useState(() => {
+		const raw = localStorage.getItem("pin_attempts");
+		const parsed = raw ? Number(raw) : 0;
+		return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+	});
+	const [pinLockedUntil, setPinLockedUntil] = useState(() => {
+		const raw = localStorage.getItem("pin_locked_until");
+		const parsed = raw ? Number(raw) : 0;
+		return Number.isFinite(parsed) && parsed > Date.now() ? parsed : 0;
+	});
 
 	const handleBiometricAuth = useCallback(() => {
 		const webApp = (window as any).Telegram?.WebApp;
@@ -335,7 +332,54 @@ export const PinManager = () => {
 		if (pin.length === 4) processPin();
 	}, [pin]);
 
+	useEffect(() => {
+		localStorage.setItem("pin_attempts", String(pinAttempts));
+	}, [pinAttempts]);
+
+	useEffect(() => {
+		if (pinLockedUntil > Date.now()) {
+			localStorage.setItem("pin_locked_until", String(pinLockedUntil));
+		} else {
+			localStorage.removeItem("pin_locked_until");
+		}
+	}, [pinLockedUntil]);
+
+	useEffect(() => {
+		if (pinLockedUntil <= Date.now()) return;
+		const timer = window.setInterval(() => {
+			if (Date.now() >= pinLockedUntil) {
+				setPinLockedUntil(0);
+				setPinAttempts(0);
+				setPin("");
+			}
+		}, 500);
+		return () => window.clearInterval(timer);
+	}, [pinLockedUntil]);
+
+	const registerPinFailure = () => {
+		setPinAttempts((current) => {
+			const next = current + 1;
+			if (next >= 5) {
+				const lockoutMs = Math.min(
+					5 * 60_000,
+					30_000 * (1 + Math.floor((next - 5) / 2))
+				);
+				setPinLockedUntil(Date.now() + lockoutMs);
+				showToast("Too many attempts. Try again later.");
+			} else {
+				showToast("Invalid PIN code");
+			}
+			return next;
+		});
+		setPin("");
+	};
+
 	const processPin = useCallback(async () => {
+		if (pinLockedUntil > Date.now()) {
+			showToast("Too many attempts. Try again later.");
+			setPin("");
+			return;
+		}
 		setTimeout(
 			() =>
 				(async () => {
@@ -361,20 +405,17 @@ export const PinManager = () => {
 							const generated = await generateWallets(seed);
 							setWallets(generated);
 
-							const tgUser = (window as any).Telegram?.WebApp
-								?.initDataUnsafe?.user?.username;
-							if (tgUser) {
-								await registerUsername(tgUser, generated.ton.address, generated.eth.address, generated.sol.address);
-							}
-
 							setView("main");
+							setPinAttempts(0);
+							setPinLockedUntil(0);
+							localStorage.removeItem("pin_attempts");
+							localStorage.removeItem("pin_locked_until");
 
 							fetchBalances(generated, networkMode)
 								.then(setBalances)
 								.catch((e) => console.error(e));
 						} catch {
-							showToast("Invalid PIN code");
-							setPin("");
+							registerPinFailure();
 							setView("pin-enter");
 						}
 					} else if (view === "pin-confirm-seed") {
@@ -386,8 +427,7 @@ export const PinManager = () => {
 							setPin("");
 							setView("settings");
 						} catch {
-							showToast("Invalid PIN code");
-							setPin("");
+							registerPinFailure();
 						}
 					} else if (view === "pin-confirm-biometric") {
 						try {
@@ -412,8 +452,7 @@ export const PinManager = () => {
 								);
 							}
 						} catch {
-							showToast("Invalid PIN code");
-							setPin("");
+							registerPinFailure();
 						}
 					}
 				})().catch((e) => console.warn("processPin error:", e)),
@@ -426,12 +465,15 @@ export const PinManager = () => {
 		setTempPin,
 		showToast,
 		pin,
+		pinAttempts,
+		pinLockedUntil,
 		setMnemonic,
 		setWallets,
 		setBalances,
 		networkMode,
 		setSeedRevealed,
 		setBiometricEnabled,
+		registerPinFailure,
 	]);
 
 	const title =

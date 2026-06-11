@@ -1,0 +1,2 @@
+{"candidate_id":"SEC-001","title":"Offline recovery of wallet seed from 4-digit PIN","status":"reportable"}
+{"candidate_id":"SEC-002","title":"Telegram username registry hijacking via unverified initDataUnsafe and client upsert","status":"reportable"}

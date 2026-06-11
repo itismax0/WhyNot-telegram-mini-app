@@ -22,6 +22,9 @@ import {
 	MoreView,
 	VPNView,
 	CloudView,
+	TonBrowserView,
+	TonStakingView,
+	TelegramGiftsView,
 } from "./views/MainViews";
 import { TokenDetailView } from "./views/TokenDetailView";
 import { SettingsView } from "./views/SettingsView";
@@ -242,6 +245,9 @@ const AppContent = () => {
 					{view === "more" && <MoreView key="more" />}
 					{view === "vpn" && <VPNView key="vpn" />}
 					{view === "cloud" && <CloudView key="cloud" />}
+					{view === "browser" && <TonBrowserView key="browser" />}
+					{view === "staking" && <TonStakingView key="staking" />}
+					{view === "gifts" && <TelegramGiftsView key="gifts" />}
 					{view === "token_detail" && <TokenDetailView key="token_detail" />}
 					{view === "ai" && <AIChatView key="ai" />}
 				</AnimatePresence>

@@ -21,8 +21,19 @@ import {
 	Bot,
 	Cloud,
 	Globe,
+	Gift,
 	HardDrive,
 	ExternalLink,
+	RefreshCw,
+	Search,
+	Star,
+	TrendingUp,
+	PartyPopper,
+	Crown,
+	Flame,
+	Candy,
+	Ticket,
+	Heart,
 } from "lucide-react";
 import { useWallet } from "../store/WalletContext";
 
@@ -70,6 +81,27 @@ const copyTextToClipboard = (text: string): boolean => {
 	}
 	document.body.removeChild(textArea);
 	return successful;
+};
+
+const openExternalLink = (url: string) => {
+	const webApp = (window as any).Telegram?.WebApp;
+	if (/^https?:\/\/t\.me\//i.test(url) && webApp?.openTelegramLink) {
+		webApp.openTelegramLink(url);
+		return;
+	}
+	if (webApp?.openLink) {
+		webApp.openLink(url);
+		return;
+	}
+	window.open(url, "_blank", "noopener,noreferrer");
+};
+
+const normalizeBrowserUrl = (value: string): string => {
+	const trimmed = value.trim();
+	if (!trimmed) return "https://ton.org";
+	if (/^https?:\/\//i.test(trimmed)) return trimmed;
+	if (/^[a-z0-9.-]+\.[a-z]{2,}/i.test(trimmed)) return `https://${trimmed}`;
+	return `https://duckduckgo.com/?q=${encodeURIComponent(trimmed + " TON")}`;
 };
 
 const Combobox = ({
@@ -1497,6 +1529,33 @@ export const MoreView = () => {
 					: "Private decentralized storage",
 			icon: HardDrive,
 		},
+		{
+			id: "browser",
+			title: language === "ru" ? "TON-браузер" : "TON Browser",
+			description:
+				language === "ru"
+					? "Простой встроенный браузер для TON и web3"
+					: "Simple built-in browser for TON and web3",
+			icon: Globe,
+		},
+		{
+			id: "staking",
+			title: language === "ru" ? "Стейкинг TON" : "TON Staking",
+			description:
+				language === "ru"
+					? "Быстрый доступ к стейкингу TON"
+					: "Quick access to TON staking",
+			icon: Wallet,
+		},
+		{
+			id: "gifts",
+			title: language === "ru" ? "Telegram gifts" : "Telegram gifts",
+			description:
+				language === "ru"
+					? "Подарки и цифровые коллекционные предметы Telegram"
+					: "Telegram gifts and digital collectibles",
+			icon: Gift,
+		},
 	] as const;
 
 	return (
@@ -1664,6 +1723,437 @@ export const CloudView = () => {
 					))}
 				</div>
 			</div>
+		</motion.div>
+	);
+};
+
+export const TonBrowserView = () => {
+	const { setView, language } = useWallet();
+	const [input, setInput] = useState("ton.org");
+	const [currentUrl, setCurrentUrl] = useState("https://ton.org");
+	const [history, setHistory] = useState<string[]>(["https://ton.org"]);
+	const quickLinks = [
+		{ label: "TON", url: "https://ton.org" },
+		{ label: "Tonkeeper", url: "https://tonkeeper.com" },
+		{ label: "STON.fi", url: "https://app.ston.fi" },
+		{ label: "Fragment", url: "https://fragment.com" },
+		{ label: "TON docs", url: "https://docs.ton.org" },
+		{ label: "TON scan", url: "https://tonscan.org" },
+	];
+
+	const navigate = (value = input) => {
+		const next = normalizeBrowserUrl(value);
+		setInput(next);
+		setCurrentUrl(next);
+		setHistory((prev) => [next, ...prev.filter((item) => item !== next)].slice(0, 8));
+		openExternalLink(next);
+	};
+
+	return (
+		<motion.div
+			initial={{ x: "100%" }}
+			animate={{ x: 0 }}
+			transition={{ type: "spring", damping: 25, stiffness: 200 }}
+			className="flex flex-col min-h-screen p-5 pb-8"
+		>
+			<div className="flex items-center gap-4 mb-5 pt-2">
+				<button
+					onClick={() => setView("more")}
+					className="p-2 bg-[#111] rounded-full hover:bg-[#222] transition-colors"
+				>
+					<ChevronLeft size={20} />
+				</button>
+				<h2 className="font-medium text-lg">
+					{language === "ru" ? "TON-браузер" : "TON Browser"}
+				</h2>
+			</div>
+
+			<div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-[1.5rem] p-3 mb-4">
+				<div className="flex gap-2">
+					<div className="flex-1 flex items-center gap-2 bg-[#111] border border-[#222] rounded-2xl px-3">
+						<Search size={16} className="text-gray-500" />
+						<input
+							value={input}
+							onChange={(e) => setInput(e.target.value)}
+							onKeyDown={(e) => {
+								if (e.key === "Enter") navigate();
+							}}
+							className="w-full bg-transparent py-3 text-sm outline-none text-white placeholder-gray-600"
+							placeholder={language === "ru" ? "URL или поиск" : "URL or search"}
+						/>
+					</div>
+					<button
+						onClick={() => navigate()}
+						className="px-4 bg-white text-black rounded-2xl font-semibold text-sm active:scale-95 transition-transform"
+					>
+						GO
+					</button>
+				</div>
+				<div className="grid grid-cols-4 gap-2 mt-3">
+					{quickLinks.map((link) => (
+						<button
+							key={link.url}
+							onClick={() => navigate(link.url)}
+							className="py-2 bg-[#111] border border-[#222] rounded-xl text-[11px] text-gray-300 active:scale-95 transition-transform"
+						>
+							{link.label}
+						</button>
+					))}
+				</div>
+			</div>
+
+			<div className="flex items-center justify-between gap-2 mb-3">
+				<button
+					onClick={() => navigate(currentUrl)}
+					className="flex items-center gap-2 px-3 py-2 bg-[#111] border border-[#222] rounded-xl text-xs text-gray-300"
+				>
+					<RefreshCw size={14} /> {language === "ru" ? "Обновить" : "Reload"}
+				</button>
+				<div className="flex items-center gap-2 px-3 py-2 bg-[#111] border border-[#222] rounded-xl text-xs text-gray-300 max-w-[220px] truncate">
+					<ExternalLink size={14} className="shrink-0" />
+					<span className="truncate">{currentUrl.replace(/^https?:\/\//, "")}</span>
+				</div>
+			</div>
+
+			<div className="flex-1 rounded-[1.5rem] border border-[#1a1a1a] bg-[#080808] p-4 min-h-[520px]">
+				<div className="bg-[#111] border border-[#222] rounded-[1.25rem] p-4 mb-4">
+					<p className="text-[10px] uppercase font-mono text-gray-500 mb-1">
+						{language === "ru" ? "Ссылка" : "Location"}
+					</p>
+					<div className="text-sm text-white break-all">{currentUrl}</div>
+					<p className="text-xs text-gray-500 mt-2">
+						{language === "ru"
+							? "Сайт откроется во встроенном браузере Telegram, а не в iframe."
+							: "The site opens in Telegram's built-in browser instead of an iframe."}
+					</p>
+					<button
+						onClick={() => openExternalLink(currentUrl)}
+						className="mt-4 w-full py-3 bg-white text-black rounded-2xl font-semibold"
+					>
+						{language === "ru" ? "Открыть сейчас" : "Open now"}
+					</button>
+				</div>
+				<div className="mb-4">
+					<h3 className="text-sm uppercase font-mono text-gray-500 mb-3">
+						{language === "ru" ? "Последние сайты" : "Recent sites"}
+					</h3>
+					<div className="grid grid-cols-1 gap-2">
+						{history.map((item) => (
+							<button
+								key={item}
+								onClick={() => navigate(item)}
+								className="text-left bg-[#111] border border-[#222] rounded-2xl px-4 py-3 text-sm text-gray-300 truncate"
+							>
+								{item.replace(/^https?:\/\//, "")}
+							</button>
+						))}
+					</div>
+				</div>
+				<div>
+					<h3 className="text-sm uppercase font-mono text-gray-500 mb-3">
+						{language === "ru" ? "Подсказки" : "Suggestions"}
+					</h3>
+					<div className="grid grid-cols-2 gap-2">
+						{quickLinks.map((link) => (
+							<button
+								key={link.url + "-suggestion"}
+								onClick={() => navigate(link.url)}
+								className="rounded-2xl border border-[#222] bg-[#0f0f0f] px-3 py-3 text-left"
+							>
+								<div className="text-sm font-semibold text-white">{link.label}</div>
+								<div className="text-[11px] text-gray-500 truncate">
+									{link.url.replace(/^https?:\/\//, "")}
+								</div>
+							</button>
+						))}
+					</div>
+				</div>
+			</div>
+		</motion.div>
+	);
+};
+
+export const TonStakingView = () => {
+	const { setView, language, wallets, balances, rates, showToast } = useWallet();
+	const [amount, setAmount] = useState("");
+	const [validator, setValidator] = useState("Whales");
+	const [positions, setPositions] = useState<Array<{ id: number; amount: number; validator: string; createdAt: number }>>(() => {
+		try {
+			return JSON.parse(localStorage.getItem("ton_staking_positions") || "[]");
+		} catch {
+			return [];
+		}
+	});
+	const apy = 4.8;
+	const amountNum = Number(amount || 0);
+	const yearly = amountNum > 0 ? (amountNum * apy) / 100 : 0;
+	const tonPrice = rates.ton || 0;
+
+	useEffect(() => {
+		localStorage.setItem("ton_staking_positions", JSON.stringify(positions));
+	}, [positions]);
+
+	const addPosition = () => {
+		if (!wallets?.ton?.address) {
+			showToast(language === "ru" ? "Сначала создайте кошелек" : "Create wallet first");
+			return;
+		}
+		if (!amountNum || amountNum <= 0) {
+			showToast(language === "ru" ? "Введите сумму TON" : "Enter TON amount");
+			return;
+		}
+		if (amountNum > (balances.ton || 0)) {
+			showToast(language === "ru" ? "Недостаточно TON" : "Not enough TON");
+			return;
+		}
+		setPositions((prev) => [
+			{ id: Date.now(), amount: amountNum, validator, createdAt: Date.now() },
+			...prev,
+		]);
+		setAmount("");
+		showToast(language === "ru" ? "Позиция добавлена" : "Position added");
+	};
+
+	return (
+		<motion.div
+			initial={{ x: "100%" }}
+			animate={{ x: 0 }}
+			transition={{ type: "spring", damping: 25, stiffness: 200 }}
+			className="flex flex-col min-h-screen p-5 pb-8"
+		>
+			<div className="flex items-center gap-4 mb-8 pt-2">
+				<button
+					onClick={() => setView("more")}
+					className="p-2 bg-[#111] rounded-full hover:bg-[#222] transition-colors"
+				>
+					<ChevronLeft size={20} />
+				</button>
+				<h2 className="font-medium text-lg">
+					{language === "ru" ? "Стейкинг TON" : "TON Staking"}
+				</h2>
+			</div>
+
+			<div className="bg-gradient-to-br from-[#12254f] to-[#070b16] border border-[#1d3b78]/60 rounded-[2rem] p-6 mb-5">
+				<div className="flex items-center justify-between mb-6">
+					<div>
+						<p className="text-xs text-blue-200/70 uppercase font-mono mb-1">TON APY</p>
+						<h3 className="text-4xl font-bold">{apy}%</h3>
+					</div>
+					<div className="w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center">
+						<TrendingUp size={32} />
+					</div>
+				</div>
+				<div className="grid grid-cols-2 gap-3 text-sm">
+					<div className="bg-black/20 rounded-2xl p-3">
+						<p className="text-gray-400 text-xs">{language === "ru" ? "Баланс" : "Balance"}</p>
+						<p className="font-semibold">{(balances.ton || 0).toFixed(4)} TON</p>
+					</div>
+					<div className="bg-black/20 rounded-2xl p-3">
+						<p className="text-gray-400 text-xs">{language === "ru" ? "Адрес" : "Address"}</p>
+						<p className="font-mono text-xs truncate">{wallets?.ton?.address || "N/A"}</p>
+					</div>
+				</div>
+			</div>
+
+			<div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-[1.5rem] p-4 mb-5">
+				<label className="text-xs text-gray-500 uppercase font-mono mb-2 block">
+					{language === "ru" ? "Сумма" : "Amount"}
+				</label>
+				<div className="flex gap-2 mb-4">
+					<input
+						type="number"
+						value={amount}
+						onChange={(e) => setAmount(e.target.value)}
+						className="flex-1 bg-[#111] border border-[#222] rounded-2xl px-4 py-3 outline-none"
+						placeholder="0.00 TON"
+					/>
+					<button
+						onClick={() => setAmount(String(balances.ton || 0))}
+						className="px-4 bg-[#111] border border-[#222] rounded-2xl text-sm"
+					>
+						MAX
+					</button>
+				</div>
+				<label className="text-xs text-gray-500 uppercase font-mono mb-2 block">
+					{language === "ru" ? "Валидатор" : "Validator"}
+				</label>
+				<div className="grid grid-cols-3 gap-2 mb-4">
+					{["Whales", "TON Nominators", "Tonkeeper"].map((name) => (
+						<button
+							key={name}
+							onClick={() => setValidator(name)}
+							className={`py-2 rounded-xl text-xs border ${
+								validator === name ? "bg-white text-black border-white" : "bg-[#111] text-gray-300 border-[#222]"
+							}`}
+						>
+							{name}
+						</button>
+					))}
+				</div>
+				<div className="flex justify-between text-sm mb-4">
+					<span className="text-gray-500">{language === "ru" ? "Прогноз за год" : "Year estimate"}</span>
+					<span>{yearly.toFixed(4)} TON {tonPrice ? `≈ $${(yearly * tonPrice).toFixed(2)}` : ""}</span>
+				</div>
+				<button
+					onClick={addPosition}
+					className="w-full py-4 bg-white text-black rounded-2xl font-semibold active:scale-95 transition-transform"
+				>
+					{language === "ru" ? "Добавить позицию" : "Add staking position"}
+				</button>
+				<button
+					onClick={() => openExternalLink("https://tonvalidators.org")}
+					className="w-full mt-3 py-3 bg-[#111] border border-[#222] rounded-2xl text-sm text-gray-300"
+				>
+					{language === "ru" ? "Открыть валидаторов TON" : "Open TON validators"}
+				</button>
+			</div>
+
+			<div className="space-y-3">
+				<h3 className="text-sm text-gray-500 uppercase font-mono px-1">
+					{language === "ru" ? "Мои позиции" : "My positions"}
+				</h3>
+				{positions.length === 0 ? (
+					<div className="p-5 bg-[#0a0a0a] border border-[#1a1a1a] rounded-2xl text-sm text-gray-500 text-center">
+						{language === "ru" ? "Пока нет позиций" : "No positions yet"}
+					</div>
+				) : positions.map((pos) => (
+					<div key={pos.id} className="p-4 bg-[#0a0a0a] border border-[#1a1a1a] rounded-2xl flex items-center justify-between">
+						<div>
+							<p className="font-semibold">{pos.amount.toFixed(4)} TON</p>
+							<p className="text-xs text-gray-500">{pos.validator}</p>
+						</div>
+						<button
+							onClick={() => setPositions((prev) => prev.filter((p) => p.id !== pos.id))}
+							className="px-3 py-2 bg-[#111] border border-[#222] rounded-xl text-xs text-gray-300"
+						>
+							{language === "ru" ? "Снять" : "Unstake"}
+						</button>
+					</div>
+				))}
+			</div>
+		</motion.div>
+	);
+};
+
+export const TelegramGiftsView = () => {
+	const { setView, language, showToast } = useWallet();
+	const gifts = [
+		{ id: "ball", name: "Crystal Ball", floor: "350+", url: "https://fragment.com/gifts", icon: Heart, colors: "from-[#7c3aed] to-[#4c1d95]", ribbon: language === "ru" ? "маркет" : "market" },
+		{ id: "torch", name: "Torch", floor: "387+", url: "https://fragment.com/gifts", icon: Flame, colors: "from-[#1f9d7a] to-[#065f46]", ribbon: language === "ru" ? "маркет" : "market" },
+		{ id: "flamingo", name: "Flamingo", floor: "370+", url: "https://fragment.com/gifts", icon: Candy, colors: "from-[#f472b6] to-[#db2777]", ribbon: language === "ru" ? "маркет" : "market" },
+		{ id: "noodles", name: "Hot Noodles", floor: "375+", url: "https://fragment.com/gifts", icon: Ticket, colors: "from-[#f59e0b] to-[#b45309]", ribbon: language === "ru" ? "маркет" : "market" },
+		{ id: "dog", name: "Doggo", floor: "690+", url: "https://fragment.com/gifts", icon: Crown, colors: "from-[#fbbf24] to-[#92400e]", ribbon: language === "ru" ? "маркет" : "market" },
+		{ id: "popsicle", name: "Popsicle", floor: "439+", url: "https://fragment.com/gifts", icon: Gift, colors: "from-[#7c2d12] to-[#3f1d0a]", ribbon: language === "ru" ? "маркет" : "market" },
+		{ id: "lollipop", name: "Lollipop", floor: "380+", url: "https://fragment.com/gifts", icon: PartyPopper, colors: "from-[#06b6d4] to-[#0f766e]", ribbon: language === "ru" ? "маркет" : "market" },
+		{ id: "backpack", name: "Backpack", floor: "528+", url: "https://fragment.com/gifts", icon: Star, colors: "from-[#60a5fa] to-[#1e3a8a]", ribbon: language === "ru" ? "маркет" : "market" },
+		{ id: "cash", name: "Cash Pack", floor: "560+", url: "https://fragment.com/gifts", icon: Sparkles, colors: "from-[#10b981] to-[#14532d]", ribbon: language === "ru" ? "маркет" : "market" },
+		{ id: "cupcake", name: "Cupcake", floor: "359+", url: "https://fragment.com/gifts", icon: Gift, colors: "from-[#fb7185] to-[#9f1239]", ribbon: language === "ru" ? "маркет" : "market" },
+		{ id: "poop", name: "Funny Pile", floor: "440+", url: "https://fragment.com/gifts", icon: Heart, colors: "from-[#84cc16] to-[#365314]", ribbon: language === "ru" ? "маркет" : "market" },
+		{ id: "candycane", name: "Candy Cane", floor: "380+", url: "https://fragment.com/gifts", icon: Candy, colors: "from-[#14b8a6] to-[#0f766e]", ribbon: language === "ru" ? "маркет" : "market" },
+	];
+	const [favorites, setFavorites] = useState<string[]>(() => {
+		try {
+			return JSON.parse(localStorage.getItem("telegram_gift_favorites") || "[]");
+		} catch {
+			return [];
+		}
+	});
+
+	useEffect(() => {
+		localStorage.setItem("telegram_gift_favorites", JSON.stringify(favorites));
+	}, [favorites]);
+
+	const toggleFavorite = (id: string) => {
+		setFavorites((prev) => prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]);
+		showToast(language === "ru" ? "Избранное обновлено" : "Favorites updated");
+	};
+
+	return (
+		<motion.div
+			initial={{ x: "100%" }}
+			animate={{ x: 0 }}
+			transition={{ type: "spring", damping: 25, stiffness: 200 }}
+			className="flex flex-col min-h-screen p-5 pb-8"
+		>
+			<div className="flex items-center gap-4 mb-8 pt-2">
+				<button
+					onClick={() => setView("more")}
+					className="p-2 bg-[#111] rounded-full hover:bg-[#222] transition-colors"
+				>
+					<ChevronLeft size={20} />
+				</button>
+				<h2 className="font-medium text-lg">Telegram gifts</h2>
+			</div>
+
+			<div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-[2rem] p-6 mb-5">
+				<div className="w-16 h-16 bg-[#111] rounded-2xl flex items-center justify-center text-[#2f7dff] border border-[#222] mb-5">
+					<Gift size={32} />
+				</div>
+				<h3 className="text-2xl font-bold mb-2">
+					{language === "ru" ? "Подарки Telegram" : "Telegram Gifts"}
+				</h3>
+				<p className="text-sm text-gray-400 leading-relaxed">
+					{language === "ru"
+						? "Следите за цифровыми подарками, сохраняйте избранное и переходите на маркетплейс Fragment."
+						: "Track digital gifts, save favorites, and jump to the Fragment marketplace."}
+				</p>
+			</div>
+
+			<div className="grid grid-cols-3 gap-2 mb-5">
+				{gifts.map((gift) => {
+					const favorite = favorites.includes(gift.id);
+					const Icon = gift.icon;
+					return (
+						<div
+							key={gift.id}
+							className={`relative overflow-hidden rounded-[1.25rem] border border-white/10 bg-gradient-to-br ${gift.colors} p-2.5 min-h-[165px] shadow-lg`}
+						>
+							<div className="absolute right-0 top-0">
+								<div className="origin-top-right rotate-45 translate-x-6 -translate-y-1 bg-white/90 text-[#0a0a0a] px-8 py-1 text-[10px] font-bold uppercase tracking-wide">
+									{gift.ribbon}
+								</div>
+							</div>
+							<div className="flex items-center justify-between mb-4">
+								<button
+									onClick={() => toggleFavorite(gift.id)}
+									className={`w-8 h-8 rounded-full flex items-center justify-center ${favorite ? "bg-white text-black" : "bg-white/15 text-white/80"}`}
+								>
+									<Star size={16} fill={favorite ? "currentColor" : "none"} />
+								</button>
+								<div className="text-[10px] font-mono text-white/85 rounded-full bg-black/20 px-2 py-1">
+									#{gift.floor}
+								</div>
+							</div>
+							<div className="flex-1 flex items-center justify-center py-2">
+								<div className="w-[72px] h-[72px] rounded-[1.5rem] bg-black/15 border border-white/15 flex items-center justify-center shadow-inner">
+									<Icon size={30} className="text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.25)]" />
+								</div>
+							</div>
+							<div className="mt-4 flex items-end justify-between gap-2">
+								<div className="min-w-0">
+									<h4 className="font-semibold text-sm text-white truncate">{gift.name}</h4>
+									<p className="text-[11px] text-white/75">
+										{language === "ru" ? "Маркет Fragment" : "Fragment market"}
+									</p>
+								</div>
+								<button
+									onClick={() => openExternalLink(gift.url)}
+									className="shrink-0 rounded-full bg-white text-black px-3 py-2 text-[11px] font-semibold"
+								>
+									{language === "ru" ? "Открыть" : "Open"}
+								</button>
+							</div>
+						</div>
+					);
+				})}
+			</div>
+
+			<button
+				onClick={() => openExternalLink("https://fragment.com/gifts")}
+				className="w-full py-4 bg-white text-black rounded-2xl font-semibold active:scale-95 transition-transform"
+			>
+				{language === "ru" ? "Открыть Fragment" : "Open Fragment"}
+			</button>
 		</motion.div>
 	);
 };
