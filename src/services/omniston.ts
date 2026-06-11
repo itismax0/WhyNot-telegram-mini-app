@@ -88,7 +88,7 @@ class OmnistonClient {
 	private listeners = new Map<string, Set<Listener>>();
 	private pingTimer: ReturnType<typeof setInterval> | null = null;
 	private connectPromise: Promise<void> | null = null;
-	private explicitlyClosed = false;
+	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(url: string = OMNISTON_WS_URL) {
 		this.url = url;
@@ -130,11 +130,9 @@ class OmnistonClient {
 				this.rejectAllPending(
 					new Error("Omniston WebSocket closed")
 				);
-				if (!this.explicitlyClosed) {
-					setTimeout(() => {
-						this.connect().catch(() => undefined);
-					}, 3000);
-				}
+				this.reconnectTimer = setTimeout(() => {
+					this.connect().catch(() => undefined);
+				}, 3000);
 			};
 
 			this.ws.onmessage = (event) => {
@@ -150,7 +148,10 @@ class OmnistonClient {
 	}
 
 	close() {
-		this.explicitlyClosed = true;
+		if (this.reconnectTimer) {
+			clearTimeout(this.reconnectTimer);
+			this.reconnectTimer = null;
+		}
 		this.stopPing();
 		this.listeners.clear();
 		if (this.ws) {

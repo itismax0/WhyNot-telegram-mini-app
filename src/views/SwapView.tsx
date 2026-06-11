@@ -438,6 +438,7 @@ export const SwapView = () => {
 	const canContinue =
 		quoteState === "ready" &&
 		(!!quote || !!symbQuote) &&
+		!isNaN(Number(fromAmount)) &&
 		Number(fromAmount) > 0 &&
 		Number(fromAmount) <= fromBalance &&
 		fromToken.address !== toToken.address &&
@@ -449,7 +450,6 @@ export const SwapView = () => {
 		setToToken(prev);
 		setFromAmount("");
 		setShowFromPicker(false);
-		setShowToPicker(false);
 	};
 
 	const handleMax = () => {
@@ -517,7 +517,7 @@ export const SwapView = () => {
 										? "Обмен завершён"
 										: "Swap completed"
 								);
-								fetchBalances(wallets, networkMode).then(setBalances);
+								fetchBalances(wallets, networkMode).then(setBalances).catch((e) => console.error("Swap balance fetch failed", e));
 							} else if (result === 3) {
 								setSubmitError(
 									language === "ru"
@@ -597,7 +597,7 @@ export const SwapView = () => {
 								? "Обмен завершён"
 								: "Swap completed"
 						);
-						fetchBalances(wallets, networkMode).then(setBalances);
+						fetchBalances(wallets, networkMode).then(setBalances).catch((e) => console.error("Swap balance fetch failed", e));
 						} else if (status?.status === "refund" || status?.status === "fail") {
 							clearInterval(pollInterval);
 							setSubmitError(

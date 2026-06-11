@@ -43,6 +43,7 @@ export async function cachedFetch<T>(
 		throw err;
 	});
 	inflight.set(key, promise);
+	setTimeout(() => inflight.delete(key), 30000);
 	return promise;
 }
 

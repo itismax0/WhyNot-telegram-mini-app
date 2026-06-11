@@ -207,7 +207,9 @@ export const SettingsView = () => {
 			)
 		) {
 			await removeCloudItem("wallet_data");
-			localStorage.clear();
+			localStorage.removeItem("wallet_data");
+			localStorage.removeItem("pin_attempts");
+			localStorage.removeItem("pin_locked_until");
 			window.location.reload();
 		}
 	}, [language]);

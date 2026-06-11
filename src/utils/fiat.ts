@@ -17,6 +17,7 @@ export function formatFiat(
 	currency: FiatCurrency,
 	options?: { minimumFractionDigits?: number; maximumFractionDigits?: number }
 ) {
+	if (!Number.isFinite(value)) return "—";
 	const symbol = currencySymbols[currency] ?? "$";
 	const locale = localeMap[currency] ?? "en-US";
 	return `${symbol}${value.toLocaleString(locale, {

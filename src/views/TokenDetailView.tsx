@@ -245,19 +245,27 @@ export const TokenDetailView = () => {
 	// Fetch market metadata from CoinGecko (once per asset, low frequency)
 	useEffect(() => {
 		if (!cgId) return;
-		fetch(`https://api.coingecko.com/api/v3/coins/${cgId}?localization=false&tickers=false&community_data=false&developer_data=false`)
-			.then(r => r.json())
-			.then(setMarketData)
-			.catch(() => console.warn("TokenDetailView: failed to fetch market data"));
+		let cancelled = false;
+		cachedFetch(
+			`cg_market_${cgId}`,
+			() => fetch(`https://api.coingecko.com/api/v3/coins/${cgId}?localization=false&tickers=false&community_data=false&developer_data=false`)
+				.then(r => r.json()),
+			5 * 60 * 1000
+		).then((data) => { if (!cancelled) setMarketData(data); }).catch(() => console.warn("TokenDetailView: failed to fetch market data"));
+		return () => { cancelled = true; };
 	}, [cgId]);
 
 	// Fetch 24h ticker from Binance (change %, volume)
 	useEffect(() => {
 		if (!binanceSymbol) return;
-		fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${binanceSymbol}`)
-			.then(r => r.json())
-			.then(setTickerData)
-			.catch(() => console.warn("TokenDetailView: failed to fetch ticker data"));
+		let cancelled = false;
+		cachedFetch(
+			`binance_ticker_${binanceSymbol}`,
+			() => fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${binanceSymbol}`)
+				.then(r => r.json()),
+			5 * 60 * 1000
+		).then((data) => { if (!cancelled) setTickerData(data); }).catch(() => console.warn("TokenDetailView: failed to fetch ticker data"));
+		return () => { cancelled = true; };
 	}, [binanceSymbol]);
 
 	// Fetch top SOL accounts for holder data

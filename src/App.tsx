@@ -19,8 +19,8 @@ import {
 	MainView,
 	ReceiveView,
 	SendView,
-	HistoryView,
 	MoreView,
+	HistoryView,
 	VPNView,
 	CloudView,
 	TonBrowserView,
@@ -33,7 +33,9 @@ import { SwapView } from "./views/SwapView";
 import { AIChatView } from "./views/AIChatView";
 import { ASSETS } from "./services/blockchain";
 
-const WebApp = (window as any).Telegram?.WebApp;
+const COINGECKO_KEY = import.meta.env.VITE_COINGECKO_KEY ?? "";
+
+const WebApp = window.Telegram?.WebApp;
 const CAPSULE_PADDING_PX = 4;
 const DRAG_THRESHOLD_PX = 5;
 
@@ -291,7 +293,8 @@ const AppContent = () => {
 			try {
 				const ids = ASSETS.map((a) => a.cmc_id).join(",");
 				const res = await fetch(
-					`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd,eur,rub&include_24hr_change=true`
+					`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd,eur,rub&include_24hr_change=true`,
+					COINGECKO_KEY ? { headers: { "x-cg-pro-api-key": COINGECKO_KEY } } : undefined
 				);
 				const data = await res.json();
 				const newRates: Record<string, number> = {};

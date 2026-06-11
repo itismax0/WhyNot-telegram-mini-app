@@ -97,7 +97,9 @@ function loadHistory(): ChatTurn[] {
 function saveHistory(turns: ChatTurn[]) {
 	try {
 		localStorage.setItem(STORAGE_KEY, JSON.stringify(turns.slice(-50)));
-	} catch {}
+	} catch (e) {
+		console.warn("AIChatView: failed to save history", e);
+	}
 }
 
 function rid() {
@@ -457,10 +459,16 @@ export const AIChatView = () => {
 					finalText = cleanText;
 					break;
 				}
-				const execResults = await Promise.all(
+				const settledResults = await Promise.allSettled(
 					limitedActions.map((a) => executeAction(a, networkMode))
 				);
-				finalCards = execResults.map((e) => ({
+				const execResults = settledResults
+					.filter((r) => r.status === "fulfilled")
+					.map((r: any) => r.value);
+				const execErrors = settledResults
+					.filter((r) => r.status === "rejected")
+					.map((r: any) => ({ action: { action: "error" as const }, error: r.reason?.message || "Unknown error" }));
+				finalCards = [...execResults, ...execErrors].map((e: any) => ({
 					action: e.action,
 					result: e.data,
 					error: e.error,

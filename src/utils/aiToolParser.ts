@@ -1,3 +1,5 @@
+import { isValidAddressOrUsername } from "../services/blockchain";
+
 export type AIAction =
 	| { action: "evaluate_wallet"; address: string }
 	| { action: "analyze_token"; query: string };
@@ -20,7 +22,7 @@ function tryParseActionObject(raw: string): AIAction | null {
 	const action = String(obj.action).toLowerCase();
 	if (action === "evaluate_wallet") {
 		const address = obj.address;
-		if (typeof address === "string" && address.trim().length >= 8) {
+		if (typeof address === "string" && isValidAddressOrUsername(address.trim())) {
 			return { action: "evaluate_wallet", address: address.trim() };
 		}
 	} else if (action === "analyze_token") {
@@ -34,7 +36,7 @@ function tryParseActionObject(raw: string): AIAction | null {
 
 export function parseAndExtractActions(text: string): ParsedAIResponse {
 	const actions: AIAction[] = [];
-	const codeBlockRe = /```(?:json)?\s*([\s\S]*?)```/g;
+	const codeBlockRe = /```\w*\s*([\s\S]*?)```/g;
 	const matchedSpans: Array<{ start: number; end: number }> = [];
 	let m: RegExpExecArray | null;
 	while ((m = codeBlockRe.exec(text)) !== null) {

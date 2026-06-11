@@ -56,24 +56,34 @@ export const RestorePromptView = () => {
 	} = useWallet();
 
 	const handleCreateNew = async () => {
-		setView("loading");
-		const seed = await mnemonicNew();
-		const encrypted = await encryptData(seed.join(" "), tempPin);
-		await setCloudItem("wallet_data", encrypted);
+		try {
+			setView("loading");
+			const seed = await mnemonicNew();
+			const encrypted = await encryptData(seed.join(" "), tempPin);
+			await setCloudItem("wallet_data", encrypted);
 
-		setMnemonic(seed);
-		const generated = await generateWallets(seed);
-		setWallets(generated);
+			setMnemonic(seed);
+			const generated = await generateWallets(seed);
+			setWallets(generated);
+			setTempPin("");
 
-		if (biometricAvailable) {
-			setView("biometric-setup");
-		} else {
-			setView("main");
+			if (biometricAvailable) {
+				setView("biometric-setup");
+			} else {
+				setView("main");
+			}
+
+			fetchBalances(generated, networkMode)
+				.then(setBalances)
+				.catch((e) => {
+					console.error(e);
+					showToast("Failed to fetch balances");
+				});
+		} catch (e) {
+			console.error("Wallet creation failed", e);
+			showToast("Failed to create wallet");
+			setView("welcome");
 		}
-
-		fetchBalances(generated, networkMode)
-			.then(setBalances)
-			.catch((e) => console.error(e));
 	};
 
 	return (
@@ -147,6 +157,7 @@ export const RestoreInputView = () => {
 			setMnemonic(rawWords);
 			const generated = await generateWallets(rawWords);
 			setWallets(generated);
+			setTempPin("");
 
 			if (biometricAvailable) {
 				setView("biometric-setup");
@@ -380,6 +391,12 @@ export const PinManager = () => {
 			setPin("");
 			return;
 		}
+		if (view === "pin-create" || view === "pin-repeat") {
+			const trivial = ["0000","1111","2222","3333","4444","5555","6666","7777","8888","9999","1234","4321","2580"];
+			if (trivial.includes(pin)) {
+				console.warn("Weak PIN chosen:", pin);
+			}
+		}
 		setTimeout(
 			() =>
 				(async () => {
@@ -399,7 +416,12 @@ export const PinManager = () => {
 						setView("loading");
 						try {
 							const encrypted = await getCloudItem("wallet_data");
-							const decryptedStr = await decryptData(encrypted!, pin);
+							if (!encrypted) {
+								showToast("No wallet data found");
+								setView("welcome");
+								return;
+							}
+							const decryptedStr = await decryptData(encrypted, pin);
 							const seed = decryptedStr.split(/\s+/).filter(Boolean);
 							setMnemonic(seed);
 							const generated = await generateWallets(seed);

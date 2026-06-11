@@ -14,6 +14,24 @@ import { Buffer } from "buffer";
 import { getCache, setCache, cachedFetch, removeCache } from "../utils/cache";
 import { upsertUsername, getUsernameRegistry } from "./supabase";
 
+const TONCENTER_KEY = import.meta.env.VITE_TONCENTER_KEY ?? "";
+
+export interface WalletSet {
+	ton: {
+		address: string;
+		contract: import("@ton/ton").WalletContractV4;
+		keyPair: import("@ton/crypto").KeyPair;
+	};
+	eth: {
+		address: string;
+		wallet: import("ethers").Wallet;
+	};
+	sol: {
+		address: string;
+		keypair: import("@solana/web3.js").Keypair;
+	};
+}
+
 export interface UsernameRegistry {
 	ton: string;
 	eth: string;
@@ -28,7 +46,9 @@ export function getChainForAsset(assetId: string): "ton" | "eth" | "sol" | null 
 }
 
 function amountToSmallestUnit(amount: number): bigint {
-	const parts = amount.toString().split(".");
+	if (!Number.isFinite(amount) || amount < 0) return BigInt(0);
+	const str = amount.toFixed(9);
+	const parts = str.split(".");
 	if (parts.length === 1) return BigInt(parts[0]) * BigInt(1_000_000_000);
 	const intPart = parts[0];
 	const fracPart = parts[1].slice(0, 9).padEnd(9, "0");
@@ -112,6 +132,10 @@ export const ASSETS = [
 
 const providerCache: Record<string, any> = {};
 
+export function resetProviders(): void {
+	Object.keys(providerCache).forEach((key) => delete providerCache[key]);
+}
+
 function getProviders(mode: "mainnet" | "testnet" | "devnet") {
 	if (providerCache[mode]) return providerCache[mode];
 	if (mode === "mainnet") {
@@ -122,7 +146,7 @@ function getProviders(mode: "mainnet" | "testnet" | "devnet") {
 			eth: new ethers.JsonRpcProvider("https://cloudflare-eth.com"),
 			sol: new Connection(
 				"https://api.mainnet-beta.solana.com",
-				"confirmed"
+				"finalized"
 			),
 		});
 	} else if (mode === "testnet") {
@@ -148,7 +172,7 @@ function getProviders(mode: "mainnet" | "testnet" | "devnet") {
 	}
 }
 
-export async function generateWallets(mnemonic: string[]) {
+export async function generateWallets(mnemonic: string[]): Promise<WalletSet> {
 	const tonKeyPair = await mnemonicToPrivateKey(mnemonic);
 	const tonWallet = WalletContractV4.create({
 		workchain: 0,
@@ -173,7 +197,7 @@ export async function generateWallets(mnemonic: string[]) {
 }
 
 export async function fetchBalances(
-	wallets: any,
+	wallets: WalletSet,
 	mode: "mainnet" | "testnet" | "devnet"
 ): Promise<Record<string, number>> {
 	const providers = getProviders(mode);
@@ -184,7 +208,7 @@ export async function fetchBalances(
 				: "https://testnet.toncenter.com/api/v2/getAddressInformation";
 
 		const [tonBalance, ethWei, solLamports] = await Promise.all([
-			fetch(`${tonEndpoint}?address=${wallets.ton.address}`)
+			fetch(`${tonEndpoint}?address=${wallets.ton.address}&api_key=${TONCENTER_KEY}`)
 				.then((r) => r.json())
 				.then(
 					(data) =>
@@ -214,7 +238,7 @@ export async function fetchBalances(
 }
 
 export async function sendTransaction(
-	wallets: any,
+	wallets: WalletSet,
 	assetId: string,
 	to: string,
 	amount: number,
@@ -231,7 +255,7 @@ export async function sendTransaction(
 			messages: [
 				internal({ to: Address.parse(to), value: amountToSmallestUnit(amount), bounce: true }),
 			],
-			sendMode: SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS,
+			sendMode: SendMode.PAY_GAS_SEPARATELY,
 		});
 		removeCache(`txs_${mode}_${wallets.ton.address}`);
 	} else if (assetId === "eth") {
@@ -275,7 +299,7 @@ export interface SymbiosisTransaction {
 }
 
 export async function executeSymbiosisSwap(
-	wallets: any,
+	wallets: WalletSet,
 	symbTx: SymbiosisTransaction,
 	sourceChain: "eth" | "ton" | "sol" | "btc",
 	mode: "mainnet" | "testnet" | "devnet"
@@ -286,6 +310,14 @@ export async function executeSymbiosisSwap(
 		const activeWallet = wallets.eth.wallet.connect(providers.eth);
 
 		if (symbTx.approveTo && symbTx.approveData) {
+			const ALLOWED_CONTRACTS = [
+				"0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+				"0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
+				"0x9328Eb759596C38a25f59028B146Fecdc3621Dfe",
+			];
+			if (!ALLOWED_CONTRACTS.includes(symbTx.approveTo.toLowerCase())) {
+				console.warn("[Symbiosis] approveTo not in allowlist:", symbTx.approveTo);
+			}
 			const approveTx = await activeWallet.sendTransaction({
 				to: symbTx.approveTo,
 				data: symbTx.approveData,
@@ -309,7 +341,10 @@ export async function executeSymbiosisSwap(
 
 	if (sourceChain === "ton") {
 		const contract = providers.ton.open(wallets.ton.contract);
-		const seqno = await contract.getSeqno().catch(() => 0);
+	const seqno = await contract.getSeqno().catch(() => {
+		console.warn("[executeSwap] Failed to fetch seqno, using 0");
+		return 0;
+	});
 		const transfer = contract.createTransfer({
 			seqno,
 			secretKey: wallets.ton.keyPair.secretKey,
@@ -356,7 +391,7 @@ export async function executeSymbiosisSwap(
 }
 
 export async function executeSwap(
-	wallets: any,
+	wallets: WalletSet,
 	messages: OmnistonTransferMessage[],
 	mode: "mainnet" | "testnet" | "devnet"
 ): Promise<{ txHash: string }> {
@@ -434,7 +469,7 @@ export async function fetchTransactions(
 				: "https://testnet.toncenter.com/api/v2/getTransactions";
 
 		try {
-			const res = await fetch(`${endpoint}?address=${address}&limit=10`);
+			const res = await fetch(`${endpoint}?address=${address}&limit=10&api_key=${TONCENTER_KEY}`);
 			const data = await res.json();
 			if (data.ok && Array.isArray(data.result)) {
 				return data.result.map((tx: any) => {
@@ -613,7 +648,11 @@ export function isValidAddressOrUsername(input: string): boolean {
 	}
 
 	if (clean.startsWith("0x")) {
-		return /^0x[a-fA-F0-9]{40}$/.test(clean);
+		try {
+			return ethers.getAddress(clean) === clean || ethers.getAddress(clean).toLowerCase() === clean.toLowerCase();
+		} catch {
+			return false;
+		}
 	}
 
 	const isTonFriendly = /^[a-zA-Z0-9_-]{48}$/.test(clean);
@@ -683,7 +722,7 @@ export async function evaluateReputationReal(
 					: "https://testnet.toncenter.com/api/v2";
 
 			const tcRes = await fetch(
-				`${tcBase}/getAddressInformation?address=${targetAddress}`
+				`${tcBase}/getAddressInformation?address=${targetAddress}&api_key=${TONCENTER_KEY}`
 			).then(r => r.json()).catch(() => null);
 			if (tcRes?.ok && tcRes.result) {
 				balance = Number(tcRes.result.balance) / 1e9;
@@ -691,12 +730,12 @@ export async function evaluateReputationReal(
 			}
 
 			const tcTxRes = await fetch(
-				`${tcBase}/getTransactions?address=${targetAddress}&limit=100`
+				`${tcBase}/getTransactions?address=${targetAddress}&limit=100&api_key=${TONCENTER_KEY}`
 			).then(r => r.json()).catch(() => null);
 			if (tcTxRes?.ok && Array.isArray(tcTxRes.result) && tcTxRes.result.length > 0) {
 				txCount = tcTxRes.result.length;
 				isActive = true;
-				let totalVol = balance;
+				let totalVol = 0;
 				let oldest = Date.now();
 				tcTxRes.result.forEach((tx: any) => {
 					const outMsg = tx.out_msgs?.[0];
@@ -726,7 +765,7 @@ export async function evaluateReputationReal(
 			}
 
 			if (txRes?.items && Array.isArray(txRes.items) && txRes.items.length > 0) {
-				let totalVal = balance;
+				let totalVal = 0;
 				let oldestTime = Date.now();
 				txRes.items.forEach((tx: any) => {
 					totalVal += Number(tx.value || 0) / 1e18;
@@ -736,7 +775,7 @@ export async function evaluateReputationReal(
 				volumeVal = totalVal;
 				accountAgeMonths = (Date.now() - oldestTime) / (1000 * 60 * 60 * 24 * 30);
 			} else {
-				volumeVal = balance;
+				volumeVal = 0;
 			}
 		} else if (isSol) {
 			const pubKey = new PublicKey(targetAddress);
@@ -762,7 +801,7 @@ export async function evaluateReputationReal(
 						providers.sol.getTransaction(s.signature, { maxSupportedTransactionVersion: 0 })
 					)
 				);
-				let totalVol = balance;
+				let totalVol = 0;
 				txDetails.forEach((res: any) => {
 					if (res.status !== "fulfilled" || !res.value?.meta) return;
 					const pre = res.value.meta.preBalances || [];
@@ -773,7 +812,7 @@ export async function evaluateReputationReal(
 				});
 				volumeVal = totalVol;
 			} else {
-				volumeVal = balance;
+				volumeVal = 0;
 			}
 		} else {
 			return evaluateReputation(clean);
@@ -845,7 +884,7 @@ export async function evaluateReputationReal(
 		colorClass = "text-[#ff453a]";
 	}
 
-	console.warn(`[WhyNot] Real on-chain score for ${clean}:`, { balance, txCount, volumeVal: volumeVal.toFixed(4), accountAgeMonths: accountAgeMonths.toFixed(1), score });
+		console.warn(`[WhyNot] On-chain score for ${clean}:`, { balance, txCount, volumeVal: volumeVal.toFixed(4), accountAgeMonths: accountAgeMonths.toFixed(1), score });
 
 	return {
 		score,

@@ -8,8 +8,8 @@ import {
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
-const GROQ_ENV_KEY = "";
-const OPENROUTER_ENV_KEY = "";
+const GROQ_ENV_KEY = import.meta.env.VITE_GROQ_KEY ?? "";
+const OPENROUTER_ENV_KEY = import.meta.env.VITE_OPENROUTER_KEY ?? "";
 
 export const GROQ_DEFAULT_KEY = GROQ_ENV_KEY;
 export const OPENROUTER_DEFAULT_KEY = OPENROUTER_ENV_KEY;
@@ -137,8 +137,10 @@ async function callProvider(
 			if (!res.ok) {
 				const text = await res.text().catch(() => "");
 				const isRateLimit = res.status === 429;
-				if (isRateLimit && i < config.models.length - 1) {
-					await new Promise((r) => setTimeout(r, 250));
+				if (isRateLimit) {
+					throw new Error(
+						`${providerLabel} RATE_LIMITED ${res.status} on ${model}: ${text.substring(0, 200)}`
+					);
 				}
 				throw new Error(
 					`${providerLabel} ${res.status} on ${model}: ${text.substring(0, 200)}`
@@ -153,6 +155,9 @@ async function callProvider(
 			return { content, model, provider };
 		} catch (e: any) {
 			if (e?.name === "AbortError") {
+				throw e;
+			}
+			if (e?.message?.includes("RATE_LIMITED")) {
 				throw e;
 			}
 			lastError = e;
@@ -221,32 +226,37 @@ export async function aiChat({
 
 	const lastErrors: unknown[] = [];
 
-	if (resolvedGroq) {
+	const tryProvider = async (provider: Provider, key: string): Promise<AIChatResult | null> => {
 		try {
-			return await callProvider(
-				"groq",
-				resolvedGroq,
-				allMessages,
-				temperature,
-				maxTokens,
-				signal
-			);
+			return await callProvider(provider, key, allMessages, temperature, maxTokens, signal);
 		} catch (e: any) {
 			if (e?.name === "AbortError") throw e;
 			lastErrors.push(e);
-			console.warn("Groq failed, falling back to OpenRouter:", e?.message ?? e);
+			const isRateLimited = e?.message?.includes("RATE_LIMITED");
+			console.warn(`${provider} failed:`, e?.message ?? e, isRateLimited ? "(rate limited, switching)" : "");
+			return null;
 		}
-	}
+	};
 
-	if (resolvedOpenRouter) {
-		return await callProvider(
-			"openrouter",
-			resolvedOpenRouter,
-			allMessages,
-			temperature,
-			maxTokens,
-			signal
-		);
+	const groqFirst = resolvedGroq && (!resolvedOpenRouter || pickGroqFirst(resolvedGroq, resolvedOpenRouter));
+
+	if (groqFirst) {
+		const groqResult = await tryProvider("groq", resolvedGroq);
+		if (groqResult) return groqResult;
+		if (resolvedOpenRouter) {
+			const orResult = await tryProvider("openrouter", resolvedOpenRouter);
+			if (orResult) return orResult;
+		}
+	} else if (resolvedOpenRouter) {
+		const orResult = await tryProvider("openrouter", resolvedOpenRouter);
+		if (orResult) return orResult;
+		if (resolvedGroq) {
+			const groqResult = await tryProvider("groq", resolvedGroq);
+			if (groqResult) return groqResult;
+		}
+	} else if (resolvedGroq) {
+		const groqResult = await tryProvider("groq", resolvedGroq);
+		if (groqResult) return groqResult;
 	}
 
 	throw new Error(
@@ -258,6 +268,12 @@ export async function aiChat({
 
 export function detectKeyProvider(key: string): Provider | null {
 	return validateKey(key);
+}
+
+function pickGroqFirst(groqKey: string, openrouterKey: string): boolean {
+	const groqWeight = groqKey.startsWith("gsk_") ? 10 : 0;
+	const orWeight = openrouterKey.startsWith("sk-") ? 8 : 0;
+	return groqWeight >= orWeight;
 }
 
 export interface AIRawTurn {

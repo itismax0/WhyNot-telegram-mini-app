@@ -62,7 +62,10 @@ export async function encryptData(text: string, pin: string): Promise<string> {
 	combined.set(salt, 0);
 	combined.set(iv, salt.length);
 	combined.set(new Uint8Array(encryptedContent), salt.length + iv.length);
-	return bytesToBase64(combined);
+	const result = bytesToBase64(combined);
+	salt.fill(0);
+	iv.fill(0);
+	return result;
 }
 
 export async function decryptData(
@@ -80,5 +83,8 @@ export async function decryptData(
 		key,
 		data
 	);
-	return new TextDecoder().decode(decryptedContent);
+	const result = new TextDecoder().decode(decryptedContent);
+	salt.fill(0);
+	iv.fill(0);
+	return result;
 }

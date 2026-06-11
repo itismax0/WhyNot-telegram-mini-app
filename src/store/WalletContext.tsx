@@ -5,6 +5,7 @@ import React, {
 	useEffect,
 	useCallback,
 	useMemo,
+	useRef,
 } from "react";
 
 type ViewState =
@@ -45,7 +46,7 @@ export const getCloudItem = (key: string): Promise<string | null> => {
 		const timeout = setTimeout(() => {
 			console.warn(`[CloudStorage] getItem("${key}") timeout, falling back to localStorage`);
 			resolve(localStorage.getItem(key));
-		}, 1000);
+		}, 5000);
 		webApp.CloudStorage.getItem(key, (err: any, value: string) => {
 			clearTimeout(timeout);
 			if (err) {
@@ -60,7 +61,7 @@ export const getCloudItem = (key: string): Promise<string | null> => {
 	});
 };
 
-const webApp = (window as any).Telegram?.WebApp;
+const webApp = window.Telegram?.WebApp;
 const isCloudSupported = (): boolean => {
 	return (
 		webApp &&
@@ -84,7 +85,7 @@ export const setCloudItem = (key: string, value: string): Promise<void> => {
 				/* localStorage quota / disabled */
 			}
 			resolve();
-		}, 1000);
+		}, 5000);
 		webApp.CloudStorage.setItem(key, value, (err: any) => {
 			clearTimeout(timeout);
 			if (err) {
@@ -110,7 +111,7 @@ export const removeCloudItem = (key: string): Promise<void> => {
 		const timeout = setTimeout(() => {
 			console.warn(`[CloudStorage] removeItem("${key}") timeout`);
 			resolve();
-		}, 1000);
+		}, 5000);
 		webApp.CloudStorage.removeItem(key, (err: any) => {
 			clearTimeout(timeout);
 			if (err) {
@@ -309,7 +310,12 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 	const [balances, setBalances] = useState<Record<string, number>>({});
 	const [rates, setRates] = useState<Record<string, number>>({});
 	const [changes, setChanges] = useState<Record<string, number>>({});
-	const [mnemonic, setMnemonic] = useState<string[]>([]);
+	const mnemonicRef = useRef<string[]>([]);
+	const [mnemonic, setMnemonicState] = useState(0);
+	const setMnemonic = useCallback((m: string[]) => {
+		mnemonicRef.current = m;
+		setMnemonicState((n) => n + 1);
+	}, []);
 	const [toast, setToast] = useState<string | null>(null);
 	const [networkMode, setNetworkModeState] = useState<NetworkMode>("mainnet");
 	const [language, setLanguageState] = useState<Language>("en");
@@ -419,7 +425,7 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 			balances,
 			rates,
 			changes,
-			mnemonic,
+			mnemonic: mnemonicRef.current,
 			toast,
 			networkMode,
 			language,

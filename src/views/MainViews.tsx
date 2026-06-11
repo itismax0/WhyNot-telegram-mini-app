@@ -101,6 +101,7 @@ const openExternalLink = (url: string) => {
 const normalizeBrowserUrl = (value: string): string => {
 	const trimmed = value.trim();
 	if (!trimmed) return "https://ton.org";
+	if (/^javascript:/i.test(trimmed) || /^data:/i.test(trimmed)) return "https://ton.org";
 	if (/^https?:\/\//i.test(trimmed)) return trimmed;
 	if (/^[a-z0-9.-]+\.[a-z]{2,}/i.test(trimmed)) return `https://${trimmed}`;
 	return `https://duckduckgo.com/?q=${encodeURIComponent(trimmed + " TON")}`;
@@ -206,22 +207,18 @@ export const MainView = () => {
 	const lastNetworkRef = useRef<string | null>(null);
 
 	useEffect(() => {
-		if (!wallets?.ton?.address) return;
-		const netKey = `${networkMode}_${wallets.ton.address}`;
-		if (lastNetworkRef.current !== netKey) {
-			lastNetworkRef.current = netKey;
-			fetchBalances(wallets, networkMode).then(setBalances);
-		} else if (Object.keys(balances).length === 0) {
-			fetchBalances(wallets, networkMode).then(setBalances);
-		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [wallets?.ton?.address, networkMode]);
-
-	useEffect(() => {
 		if (!wallets?.ton?.address) {
 			setWalletAssets([]);
 			setWalletAssetBalances({});
 			return;
+		}
+
+		const netKey = `${networkMode}_${wallets.ton.address}`;
+		if (lastNetworkRef.current !== netKey) {
+			lastNetworkRef.current = netKey;
+			fetchBalances(wallets, networkMode).then(setBalances).catch((e) => console.error("Balance fetch failed", e));
+		} else if (Object.keys(balances).length === 0) {
+			fetchBalances(wallets, networkMode).then(setBalances).catch((e) => console.error("Balance fetch failed", e));
 		}
 
 		const assets = getWalletAssets(wallets.ton.address, networkMode);
@@ -233,14 +230,14 @@ export const MainView = () => {
 		);
 
 		let cancelled = false;
-		const refreshSavedAssets = Promise.all(
+		const refreshSavedAssets = Promise.allSettled(
 			assets
 				.filter((asset) => asset.kind === "Jetton")
 				.map(async (asset) => [
 					asset.id,
 					await fetchJettonBalance(
 						asset.address,
-						wallets.ton.address,
+			wallets?.ton?.address ?? '',
 						networkMode
 					),
 				] as const)
@@ -275,8 +272,11 @@ export const MainView = () => {
 
 			setWalletAssetBalances((current) => ({
 				...current,
-				...Object.fromEntries(
-					savedEntries.filter(([, balance]) => balance > 0)
+			...Object.fromEntries(
+					savedEntries
+						.filter((r) => r.status === "fulfilled")
+						.map((r: any) => (r as PromiseFulfilledResult<readonly [string, number]>).value)
+						.filter(([, balance]) => balance > 0)
 				),
 				...Object.fromEntries(
 					discoveredCustom.map(({ asset, balance }) => [asset.id, balance])
@@ -1684,7 +1684,7 @@ export const HistoryView = () => {
 		const loadHistory = async () => {
 			setLoading(true);
 			const data = await fetchTransactions(
-				wallets.ton.address,
+				wallets?.ton?.address ?? '',
 				networkMode
 			);
 			setTxs(data);
