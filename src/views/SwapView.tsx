@@ -140,10 +140,6 @@ function tokenChain(t: SwapToken): "ton" | "eth" | "sol" | "btc" | null {
 	return null;
 }
 
-function isCrossChain(a: SwapToken, b: SwapToken): boolean {
-	return (a.chainId ?? 0) !== (b.chainId ?? 0);
-}
-
 function isOmnistonCompatible(a: SwapToken, b: SwapToken): boolean {
 	return (
 		tokenChain(a) === "ton" &&
@@ -671,7 +667,7 @@ export const SwapView = () => {
 						if (import.meta.env.DEV) {
 							console.error("Trade track error", err);
 						} else {
-							console.error("Trade track error:", err?.message ?? "unknown");
+							console.error("Trade track error:", err);
 						}
 					},
 				});

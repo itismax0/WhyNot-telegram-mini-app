@@ -50,7 +50,7 @@ import {
 	evaluateReputationReal,
 	isValidAddressOrUsername,
 } from "../services/blockchain";
-import type { ReputationDetails } from "../services/blockchain";
+import type { ReputationDetails, WalletSet } from "../services/blockchain";
 
 interface WalletTransaction {
 	hash: string;
@@ -640,7 +640,7 @@ export const MainView = () => {
 export const ReceiveView = () => {
 	const { setView, wallets, showToast, t } = useWallet();
 	const [asset, setAsset] = useState(ASSETS[0]);
-	const address = wallets[asset.id]?.address || "";
+	const address = wallets?.[asset.id as keyof WalletSet]?.address ?? "";
 
 	const handleCopy = () => {
 		const success = copyTextToClipboard(address);
@@ -1244,6 +1244,11 @@ export const SendView = () => {
 			}
 		}
 
+		if (!wallets) {
+			showToast("Wallet not initialized");
+			setLoading(false);
+			return;
+		}
 		try {
 			await sendTransaction(
 				wallets,

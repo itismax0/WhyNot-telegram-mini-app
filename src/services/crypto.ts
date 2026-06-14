@@ -148,7 +148,7 @@ export async function decryptWalletData(
 			const decryptedContent = await window.crypto.subtle.decrypt(
 				{ name: "AES-GCM", iv: iv as unknown as BufferSource },
 				key,
-				data
+				data as BufferSource
 			);
 			return new TextDecoder().decode(decryptedContent);
 		} finally {

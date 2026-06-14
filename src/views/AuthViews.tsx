@@ -303,7 +303,7 @@ export const BiometricSetupView = () => {
 	const handleEnable = useCallback(() => {
 		const app = getWebApp();
 		if (app?.BiometricManager) {
-			app.BiometricManager.requestAccess({ reason: t("enable_biometric") }, (granted: boolean) => {
+			app.BiometricManager.requestAccess(t("enable_biometric"), (granted: boolean) => {
 				if (granted) {
 					app.BiometricManager.updateBiometricToken(tempPin, (success: boolean) => {
 						if (success) {
@@ -652,7 +652,7 @@ export const PinManager = () => {
 		const app = getWebApp();
 		if (app?.BiometricManager && biometricEnabled && biometricAvailable) {
 			app.BiometricManager.authenticate(
-				{ reason: t("enter_pin") },
+				t("enter_pin"),
 				(success: boolean, token?: string) => {
 					if (success && token && token.length > 0) {
 						handlePinEnter(token);

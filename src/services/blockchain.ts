@@ -261,7 +261,7 @@ export async function fetchBalances(
 				0
 			),
 			withTimeout(
-				providers.eth.getBalance(wallets.eth.address).catch((e) => {
+				providers.eth.getBalance(wallets.eth.address).catch((e: any) => {
 					console.error(
 						"[fetchBalances] ETH balance fetch failed:",
 						e?.message ?? e
@@ -274,7 +274,7 @@ export async function fetchBalances(
 			withTimeout(
 				providers.sol
 					.getBalance(wallets.sol.keypair.publicKey)
-					.catch((e) => {
+					.catch((e: any) => {
 						console.error(
 							"[fetchBalances] SOL balance fetch failed:",
 							e?.message ?? e
