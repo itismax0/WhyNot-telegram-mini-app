@@ -13,7 +13,12 @@ import {
 } from "lucide-react";
 import { useWallet } from "../store/WalletContext";
 import { addWalletAsset } from "../services/walletAssets";
-import { executeSwap, executeSymbiosisSwap, fetchBalances } from "../services/blockchain";
+import {
+	executeSwap,
+	executeSymbiosisSwap,
+	fetchBalances,
+	type WalletSet,
+} from "../services/blockchain";
 import {
 	omniston,
 	type Quote,
@@ -28,6 +33,7 @@ import {
 } from "../services/symbiosis";
 import { TokenPickerModal, type SwapToken } from "./TokenPickerModal";
 import { fetchJettonBalance } from "../services/jettonBalance";
+import { simulateSwap } from "../services/stonfi";
 import { formatFiat } from "../utils/fiat";
 
 type QuoteState = "idle" | "loading" | "ready" | "no_quote" | "error";
@@ -56,14 +62,25 @@ const SWAP_STATUS_LABELS_RU: Record<TradeStatusType, string> = {
 };
 
 const toUnits = (amount: string, decimals: number): string => {
+	if (!amount || amount === "0") return "0";
 	const n = Number(amount);
 	if (!isFinite(n) || n <= 0) return "0";
-	return BigInt(Math.floor(n * 10 ** decimals)).toString();
+
+	const [intPart, fracPart = ""] = amount.split(".");
+	const paddedFrac = fracPart.slice(0, decimals).padEnd(decimals, "0");
+	const result =
+		BigInt(intPart) * BigInt(10) ** BigInt(decimals) + BigInt(paddedFrac);
+	return result.toString();
 };
 
 const fromUnits = (units: string, decimals: number): number => {
 	try {
-		return Number(BigInt(units)) / 10 ** decimals;
+		if (!units || units === "0") return 0;
+		const big = BigInt(units);
+		const divisor = BigInt(10) ** BigInt(decimals);
+		const intPart = big / divisor;
+		const fracPart = big % divisor;
+		return Number(intPart) + Number(fracPart) / 10 ** decimals;
 	} catch {
 		return 0;
 	}
@@ -102,15 +119,10 @@ const ADDRESS_TO_ID: Record<string, string> = {
 	[USDT_JETTON_TOKEN.address]: "usdt",
 };
 
-function getSourceWalletAddress(wallets: any, token: SwapToken): string | null {
-	const ch = tokenChain(token);
-	if (ch === "ton") return wallets?.ton?.address ?? null;
-	if (ch === "eth") return wallets?.eth?.address ?? null;
-	if (ch === "sol") return wallets?.sol?.address ?? null;
-	return null;
-}
-
-function getDestWalletAddress(wallets: any, token: SwapToken): string | null {
+function getWalletAddressForToken(
+	wallets: WalletSet | null,
+	token: SwapToken
+): string | null {
 	const ch = tokenChain(token);
 	if (ch === "ton") return wallets?.ton?.address ?? null;
 	if (ch === "eth") return wallets?.eth?.address ?? null;
@@ -173,6 +185,7 @@ export const SwapView = () => {
 	const [symbQuote, setSymbQuote] = useState<SymbiosisSwapResponse | null>(
 		null
 	);
+	const [stonfiAskUnits, setStonfiAskUnits] = useState<string | null>(null);
 	const [quoteError, setQuoteError] = useState<string | null>(null);
 
 	const [stage, setStage] = useState<SwapStage>("form");
@@ -190,7 +203,17 @@ export const SwapView = () => {
 
 	const cancelQuoteRef = useRef<{ cancelled: boolean }>({ cancelled: false });
 	const unsubscribeTrackRef = useRef<(() => void) | null>(null);
-	const walletId = `${wallets?.ton?.address}_${wallets?.eth?.address}_${wallets?.sol?.address}`;
+	const isSubmittingRef = useRef(false);
+	const jettonBalancesRef = useRef<Record<string, number>>({});
+	const walletId = useMemo(
+		() =>
+			`${wallets?.ton?.address}_${wallets?.eth?.address}_${wallets?.sol?.address}`,
+		[
+			wallets?.ton?.address,
+			wallets?.eth?.address,
+			wallets?.sol?.address,
+		]
+	);
 	const langRef = useRef(language);
 	langRef.current = language;
 
@@ -209,14 +232,17 @@ export const SwapView = () => {
 
 	const askUnits = quote?.ask_units ?? "0";
 	const symbOutAmount = symbQuote?.tokenAmountOut?.amount ?? "0";
+	const stonfiOutAmount = stonfiAskUnits ?? "0";
 	const expectedToAmount = useMemo(
 		() =>
 			quote
 				? fromUnits(askUnits, toToken.decimals ?? 6)
 				: symbQuote
 					? fromUnits(symbOutAmount, toToken.decimals ?? 6)
-					: 0,
-		[quote, symbQuote, askUnits, symbOutAmount, toToken.decimals]
+					: stonfiAskUnits
+						? fromUnits(stonfiOutAmount, toToken.decimals ?? 6)
+						: 0,
+		[quote, symbQuote, stonfiAskUnits, askUnits, symbOutAmount, stonfiOutAmount, toToken.decimals]
 	);
 	const usdIn = useMemo(
 		() => Number(fromAmount) * fromRate,
@@ -246,41 +272,62 @@ export const SwapView = () => {
 
 	useEffect(() => {
 		if (!wallets?.ton?.address) return;
-		if (fromToken.kind === "Ton" || fromToken.address === USDT_JETTON_TOKEN.address) return;
-		if (jettonBalances[fromToken.address] !== undefined) return;
-		let cancelled = false;
-		fetchJettonBalance(
-			fromToken.address,
-			wallets.ton.address,
-			networkMode
+		if (
+			fromToken.kind === "Ton" ||
+			fromToken.address === USDT_JETTON_TOKEN.address
 		)
+			return;
+		if (jettonBalancesRef.current[fromToken.address] !== undefined)
+			return;
+
+		let cancelled = false;
+		fetchJettonBalance(fromToken.address, wallets.ton.address, networkMode)
 			.then((bal) => {
 				if (cancelled) return;
+				jettonBalancesRef.current[fromToken.address] = bal;
 				setJettonBalances((prev) => ({
 					...prev,
 					[fromToken.address]: bal,
 				}));
 			})
-			.catch((e) =>
-				console.warn("Jetton balance fetch failed", fromToken.address, e)
-			);
+			.catch((e) => {
+				if (import.meta.env.DEV) {
+					console.warn(
+						"Jetton balance fetch failed",
+						fromToken.address,
+						e
+					);
+				} else {
+					console.warn(
+						"Jetton balance fetch failed:",
+						e?.message ?? "unknown"
+					);
+				}
+			});
 		return () => {
 			cancelled = true;
 		};
-	}, [fromToken.address, fromToken.kind, wallets?.ton?.address, networkMode, jettonBalances]);
+	}, [
+		fromToken.address,
+		fromToken.kind,
+		wallets?.ton?.address,
+		networkMode,
+	]);
 
 	useEffect(() => {
 		if (!wallets?.ton?.address) return;
-		if (toToken.kind === "Ton" || toToken.address === USDT_JETTON_TOKEN.address) return;
-		if (jettonBalances[toToken.address] !== undefined) return;
-		let cancelled = false;
-		fetchJettonBalance(
-			toToken.address,
-			wallets.ton.address,
-			networkMode
+		if (
+			toToken.kind === "Ton" ||
+			toToken.address === USDT_JETTON_TOKEN.address
 		)
+			return;
+		if (jettonBalancesRef.current[toToken.address] !== undefined) return;
+
+		let cancelled = false;
+		fetchJettonBalance(toToken.address, wallets.ton.address, networkMode)
 			.then((bal) => {
 				if (cancelled) return;
+				jettonBalancesRef.current[toToken.address] = bal;
 				setJettonBalances((prev) => ({
 					...prev,
 					[toToken.address]: bal,
@@ -292,7 +339,7 @@ export const SwapView = () => {
 		return () => {
 			cancelled = true;
 		};
-	}, [toToken.address, toToken.kind, wallets?.ton?.address, networkMode, jettonBalances]);
+	}, [toToken.address, toToken.kind, wallets?.ton?.address, networkMode]);
 
 	useEffect(() => {
 		const token = { cancelled: false };
@@ -302,6 +349,7 @@ export const SwapView = () => {
 		if (!fromAmount || Number(fromAmount) <= 0) {
 			setQuote(null);
 			setSymbQuote(null);
+			setStonfiAskUnits(null);
 			setQuoteState("idle");
 			setQuoteError(null);
 			setEstimatedTime(null);
@@ -335,7 +383,7 @@ export const SwapView = () => {
 		}
 
 		const isOmniston = isOmnistonCompatible(fromToken, toToken);
-		const isSymbiosis = isCrossChain(fromToken, toToken) && canUseSymbiosis(fromToken, toToken);
+		const isSymbiosis = canUseSymbiosis(fromToken, toToken);
 
 		if (!isOmniston && !isSymbiosis) {
 			setQuoteState("error");
@@ -350,13 +398,19 @@ export const SwapView = () => {
 		setQuoteState("loading");
 		setQuote(null);
 		setSymbQuote(null);
+		setStonfiAskUnits(null);
 		setQuoteError(null);
 		setEstimatedTime(null);
 
 		const timer = setTimeout(async () => {
 			if (token.cancelled) return;
-			try {
-				if (isOmniston && wallets.ton?.address) {
+
+			let omnistonResult: Quote | null = null;
+			let symbiosisResult: SymbiosisSwapResponse | null = null;
+			let stonfiResult: string | null = null;
+
+			if (isOmniston && wallets.ton?.address) {
+				try {
 					const result = await omniston.requestQuote({
 						bidAddress: fromToken.address!,
 						askAddress: toToken.address!,
@@ -366,15 +420,28 @@ export const SwapView = () => {
 					});
 					if (token.cancelled) return;
 					if (result && Number(result.ask_units) > 0) {
-						setQuote(result);
-						setQuoteState("ready");
-					} else {
-						setQuote(null);
-						setQuoteState("no_quote");
+						omnistonResult = result;
 					}
-				} else if (isSymbiosis) {
-					const sourceWallet = getSourceWalletAddress(wallets, fromToken);
-					const destWallet = getDestWalletAddress(wallets, toToken);
+				} catch (e: any) {
+					if (token.cancelled) return;
+					if (import.meta.env.DEV) {
+						console.error("Omniston quote error", e);
+					} else {
+						console.error("Omniston quote error:", e?.message ?? "unknown");
+					}
+				}
+			}
+
+			if (!omnistonResult && isSymbiosis) {
+				try {
+					const sourceWallet = getWalletAddressForToken(
+						wallets,
+						fromToken
+					);
+					const destWallet = getWalletAddressForToken(
+						wallets,
+						toToken
+					);
 					if (!sourceWallet || !destWallet) {
 						setQuoteState("error");
 						setQuoteError(
@@ -401,27 +468,62 @@ export const SwapView = () => {
 						slippage: 300,
 					});
 					if (token.cancelled) return;
-					if (result && result.tokenAmountOut?.amount && result.tokenAmountOut.amount !== "0") {
-						setSymbQuote(result);
-						setEstimatedTime(result.estimatedTime);
-						setQuoteState("ready");
+					if (
+						result &&
+						result.tokenAmountOut?.amount &&
+						result.tokenAmountOut.amount !== "0"
+					) {
+						symbiosisResult = result;
+					}
+				} catch (e: any) {
+					if (token.cancelled) return;
+					if (import.meta.env.DEV) {
+						console.error("Symbiosis quote error", e);
 					} else {
-						setSymbQuote(null);
-						setQuoteState("no_quote");
+						console.error("Symbiosis quote error:", e?.message ?? "unknown");
 					}
 				}
-			} catch (e: any) {
-				if (token.cancelled) return;
-				console.error("Quote error", e);
-				const msg = e?.message ?? "Quote failed";
-				setQuoteError(
-					msg.includes("Symbiosis")
-						? langRef.current === "ru"
-							? "Маршрут не найден для этой пары"
-							: "No route for this pair"
-						: msg
-				);
-				setQuoteState("error");
+			}
+
+			if (!omnistonResult && !symbiosisResult) {
+				try {
+					const result = await simulateSwap({
+						offerAddress: fromToken.address!,
+						askAddress: toToken.address!,
+						units: bidUnits,
+						slippageTolerance: "0.01",
+					});
+					if (token.cancelled) return;
+					if (result && result.ask_units && Number(result.ask_units) > 0) {
+						stonfiResult = result.ask_units;
+					}
+				} catch (e: any) {
+					if (token.cancelled) return;
+					if (import.meta.env.DEV) {
+						console.error("STON.fi simulate error", e);
+					} else {
+						console.error("STON.fi simulate error:", e?.message ?? "unknown");
+					}
+				}
+			}
+
+			if (token.cancelled) return;
+
+			if (omnistonResult) {
+				setQuote(omnistonResult);
+				setQuoteState("ready");
+			} else if (symbiosisResult) {
+				setSymbQuote(symbiosisResult);
+				setEstimatedTime(symbiosisResult.estimatedTime);
+				setQuoteState("ready");
+			} else if (stonfiResult) {
+				setStonfiAskUnits(stonfiResult);
+				setQuoteState("ready");
+			} else {
+				setQuote(null);
+				setSymbQuote(null);
+				setStonfiAskUnits(null);
+				setQuoteState("no_quote");
 			}
 		}, 500);
 
@@ -437,11 +539,12 @@ export const SwapView = () => {
 
 	const canContinue =
 		quoteState === "ready" &&
-		(!!quote || !!symbQuote) &&
+		(!!quote || !!symbQuote || !!stonfiAskUnits) &&
 		!isNaN(Number(fromAmount)) &&
 		Number(fromAmount) > 0 &&
 		Number(fromAmount) <= fromBalance &&
-		fromToken.address !== toToken.address &&
+		(fromToken.address !== toToken.address ||
+			fromToken.chainId !== toToken.chainId) &&
 		stage === "form";
 
 	const swapAssets = () => {
@@ -450,14 +553,29 @@ export const SwapView = () => {
 		setToToken(prev);
 		setFromAmount("");
 		setShowFromPicker(false);
+		setQuote(null);
+		setSymbQuote(null);
+		setQuoteState("idle");
+		setQuoteError(null);
 	};
 
 	const handleMax = () => {
-		setFromAmount(fromBalance.toString());
+		const NETWORK_FEE_RESERVE: Partial<Record<string, number>> = {
+			ton: 0.05,
+			eth: 0.003,
+			sol: 0.001,
+		};
+		const chain = tokenChain(fromToken);
+		const reserve = (chain && NETWORK_FEE_RESERVE[chain]) ?? 0;
+		const safeMax = Math.max(0, fromBalance - reserve);
+		setFromAmount(safeMax > 0 ? safeMax.toFixed(6) : "0");
 	};
 
 	const handleContinue = async () => {
+		if (isSubmittingRef.current) return;
 		if (!canContinue || (!quote && !symbQuote) || !wallets) return;
+
+		isSubmittingRef.current = true;
 		setStage("submitting");
 		setSubmitError(null);
 		setTrackStatus("awaiting_transfer");
@@ -517,7 +635,21 @@ export const SwapView = () => {
 										? "Обмен завершён"
 										: "Swap completed"
 								);
-								fetchBalances(wallets, networkMode).then(setBalances).catch((e) => console.error("Swap balance fetch failed", e));
+								fetchBalances(wallets, networkMode)
+									.then(setBalances)
+									.catch((e) => {
+										if (import.meta.env.DEV) {
+											console.error(
+												"Swap balance fetch failed",
+												e
+											);
+										} else {
+											console.error(
+												"Swap balance fetch failed:",
+												e?.message ?? "unknown"
+											);
+										}
+									});
 							} else if (result === 3) {
 								setSubmitError(
 									language === "ru"
@@ -536,7 +668,11 @@ export const SwapView = () => {
 						}
 					},
 					onError: (err) => {
-						console.error("Trade track error", err);
+						if (import.meta.env.DEV) {
+							console.error("Trade track error", err);
+						} else {
+							console.error("Trade track error:", err?.message ?? "unknown");
+						}
 					},
 				});
 			} else if (symbQuote) {
@@ -561,44 +697,66 @@ export const SwapView = () => {
 				setStage("tracking");
 				setTrackStatus("transferring");
 
+				const MAX_POLL_ATTEMPTS = 90; // 12 minutes
+				let pollAttempts = 0;
+
 				const pollInterval = setInterval(async () => {
+					pollAttempts++;
+					if (pollAttempts >= MAX_POLL_ATTEMPTS) {
+						clearInterval(pollInterval);
+						setSubmitError(
+							language === "ru"
+								? "Превышено время ожидания. Проверьте транзакцию в explorer."
+								: "Timeout exceeded. Check your transaction in the explorer."
+						);
+						setStage("error");
+						return;
+					}
+
 					try {
 						const status = await getSymbiosisStatus(
 							fromToken.chainId!,
 							txHash
 						);
-					if (status?.status === "success") {
-						clearInterval(pollInterval);
-						if (
-							toToken.kind === "Jetton" &&
-							wallets.ton?.address &&
-							!ADDRESS_TO_ID[toToken.address]
-						) {
-							addWalletAsset(wallets.ton.address, networkMode, {
-								id: toToken.address,
-								address: toToken.address,
-								symbol: toToken.symbol,
-								name: toToken.name,
-								icon: toToken.icon,
-								decimals: toToken.decimals,
-								network: toToken.network || "TON",
-								kind: toToken.kind,
-								priceUsd: toToken.priceUsd,
-								optimisticBalance: expectedToAmount,
+						if (status?.status === "success") {
+							clearInterval(pollInterval);
+							if (
+								toToken.kind === "Jetton" &&
+								wallets.ton?.address &&
+								!ADDRESS_TO_ID[toToken.address]
+							) {
+								addWalletAsset(wallets.ton.address, networkMode, {
+									id: toToken.address,
+									address: toToken.address,
+									symbol: toToken.symbol,
+									name: toToken.name,
+									icon: toToken.icon,
+									decimals: toToken.decimals,
+									network: toToken.network || "TON",
+									kind: toToken.kind,
+									priceUsd: toToken.priceUsd,
+									optimisticBalance: expectedToAmount,
+								});
+							}
+							setSwapResult({
+								fromAmount: Number(fromAmount),
+								toAmount: expectedToAmount,
 							});
-						}
-						setSwapResult({
-							fromAmount: Number(fromAmount),
-							toAmount: expectedToAmount,
-						});
-						setStage("success");
-						showToast(
-							language === "ru"
-								? "Обмен завершён"
-								: "Swap completed"
-						);
-						fetchBalances(wallets, networkMode).then(setBalances).catch((e) => console.error("Swap balance fetch failed", e));
-						} else if (status?.status === "refund" || status?.status === "fail") {
+							setStage("success");
+							showToast(
+								language === "ru"
+									? "Обмен завершён"
+									: "Swap completed"
+							);
+							fetchBalances(wallets, networkMode)
+								.then(setBalances)
+								.catch((e) =>
+									console.error("Swap balance fetch failed", e)
+								);
+						} else if (
+							status?.status === "refund" ||
+							status?.status === "fail"
+						) {
 							clearInterval(pollInterval);
 							setSubmitError(
 								language === "ru"
@@ -607,21 +765,54 @@ export const SwapView = () => {
 							);
 							setStage("error");
 						}
-					} catch {
-						clearInterval(pollInterval);
+					} catch (e) {
+						console.warn("[Symbiosis] Status poll error, retrying:", e);
 					}
 				}, 8000);
+
+				unsubscribeTrackRef.current?.();
 				unsubscribeTrackRef.current = () => clearInterval(pollInterval);
 			}
 		} catch (e: any) {
 			console.error("Swap failed", e);
-			setSubmitError(
-				e?.message ??
-					(language === "ru"
+			const rawMsg: string = e?.message ?? "";
+			let userMsg: string;
+
+			if (
+				rawMsg.includes("user rejected") ||
+				rawMsg.includes("User denied")
+			) {
+				userMsg =
+					language === "ru"
+						? "Транзакция отклонена"
+						: "Transaction rejected";
+			} else if (
+				rawMsg.includes("insufficient funds") ||
+				rawMsg.includes("Insufficient")
+			) {
+				userMsg =
+					language === "ru"
+						? "Недостаточно средств"
+						: "Insufficient funds";
+			} else if (
+				rawMsg.includes("sequence number") ||
+				rawMsg.includes("seqno")
+			) {
+				userMsg =
+					language === "ru"
+						? "Ошибка последовательности — повторите"
+						: "Sequence error — please retry";
+			} else {
+				userMsg =
+					language === "ru"
 						? "Не удалось выполнить обмен"
-						: "Swap failed")
-			);
+						: "Swap failed";
+			}
+
+			setSubmitError(userMsg);
 			setStage("error");
+		} finally {
+			isSubmittingRef.current = false;
 		}
 	};
 
@@ -879,8 +1070,13 @@ export const SwapView = () => {
 
 				<div className="mt-auto">
 					<button
-						onClick={handleBack}
-						className="w-full py-4 bg-[#1c1c1e] hover:bg-[#252528] text-white text-[16px] font-medium rounded-[18px] transition-all"
+						onClick={() => stage === "tracking" && handleBack()}
+						className={`w-full py-4 text-[16px] font-medium rounded-[18px] transition-all ${
+							stage === "submitting"
+								? "bg-[#1c1c1e]/50 text-gray-500 cursor-not-allowed"
+								: "bg-[#1c1c1e] hover:bg-[#252528] text-white"
+						}`}
+						disabled={stage === "submitting"}
 					>
 						{language === "ru" ? "Отмена" : "Cancel"}
 					</button>
@@ -996,8 +1192,24 @@ export const SwapView = () => {
 							<input
 								type="number"
 								placeholder="0"
+								min="0"
+								step="any"
 								value={fromAmount}
-								onChange={(e) => setFromAmount(e.target.value)}
+								onChange={(e) => {
+									const val = e.target.value;
+									if (
+										val === "" ||
+										(/^\d*\.?\d*$/.test(val) &&
+											Number(val) >= 0)
+									) {
+										setFromAmount(val);
+									}
+								}}
+								onKeyDown={(e) => {
+									if (["e", "E", "+", "-"].includes(e.key)) {
+										e.preventDefault();
+									}
+								}}
 								className="w-full min-w-0 bg-transparent text-right text-[28px] sm:text-[36px] font-bold outline-none placeholder-[#3a3a3c] text-white select-text font-sans"
 							/>
 							<p className="text-[13px] text-[#8e8e93]">

@@ -89,26 +89,49 @@ function needsV2(srcChainId: number, dstChainId: number): boolean {
 async function callApi<T>(
 	path: string,
 	method: "GET" | "POST",
-	body?: unknown
+	body?: unknown,
+	timeoutMs: number = 15000
 ): Promise<T> {
-	const res = await fetch(SYMBIOSIS_API_BASE + path, {
-		method,
-		headers: {
-			"Content-Type": "application/json",
-			Accept: "application/json",
-		},
-		body: body ? JSON.stringify(body) : undefined,
-	});
-	const text = await res.text();
-	if (!res.ok) {
-		throw new Error(
-			`Symbiosis ${method} ${path} ${res.status}: ${text.substring(0, 200)}`
-		);
-	}
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), timeoutMs);
+
 	try {
-		return JSON.parse(text) as T;
-	} catch {
-		throw new Error(`Symbiosis ${path} returned non-JSON: ${text.substring(0, 100)}`);
+		const res = await fetch(SYMBIOSIS_API_BASE + path, {
+			method,
+			headers: {
+				"Content-Type": "application/json",
+				Accept: "application/json",
+			},
+			body: body ? JSON.stringify(body) : undefined,
+			signal: controller.signal,
+		});
+		clearTimeout(timer);
+		const text = await res.text();
+		if (!res.ok) {
+			let errorMsg: string;
+			try {
+				const json = JSON.parse(text);
+				errorMsg = json.message || json.error || text;
+			} catch {
+				errorMsg = text;
+			}
+			throw new Error(
+				`Symbiosis API error (${res.status}) for ${method} ${path}: ${errorMsg}`
+			);
+		}
+		try {
+			return JSON.parse(text) as T;
+		} catch {
+			throw new Error(`Symbiosis API error: Invalid response format from ${path}`);
+		}
+	} catch (e: any) {
+		clearTimeout(timer);
+		if (e.name === "AbortError") {
+			throw new Error(
+				`Symbiosis API timeout (${timeoutMs}ms) for ${method} ${path}`
+			);
+		}
+		throw e;
 	}
 }
 
@@ -140,7 +163,17 @@ export async function getSymbiosisSwap(
 	const path = needsV2(req.tokenAmountIn.chainId, req.tokenOut.chainId)
 		? "/v2/swap"
 		: "/v1/swap";
-	return callApi<SymbiosisSwapResponse>(path, "POST", body);
+	const data = await callApi<SymbiosisSwapResponse>(path, "POST", body);
+	if (!data || typeof data !== "object") {
+		throw new Error("Invalid swap response format");
+	}
+	if (!data.tx || typeof data.tx.data !== "string") {
+		throw new Error("Swap response missing transaction payload (tx.data)");
+	}
+	if (!data.tokenAmountOut || typeof data.tokenAmountOut.amount !== "string") {
+		throw new Error("Swap response missing output amount");
+	}
+	return data;
 }
 
 export async function getSymbiosisStatus(
@@ -152,8 +185,11 @@ export async function getSymbiosisStatus(
 			`/v2/tx/${chainId}/${txHash}?partnerId=${SYMBIOSIS_PARTNER_ID}`,
 			"GET"
 		);
-	} catch {
-		return null;
+	} catch (e: any) {
+		if (e.message?.includes("404")) {
+			return null;
+		}
+		throw e;
 	}
 }
 
@@ -165,7 +201,7 @@ export interface SymbiosisChainInfo {
 }
 
 let chainsCache: { data: SymbiosisChainInfo[]; ts: number } | null = null;
-const CACHE_TTL = 60 * 60 * 1000;
+const CACHE_TTL = import.meta.env.DEV ? 60 * 1000 : 60 * 60 * 1000;
 
 export async function getSymbiosisChainsCached(): Promise<SymbiosisChainInfo[]> {
 	if (chainsCache && Date.now() - chainsCache.ts < CACHE_TTL) {

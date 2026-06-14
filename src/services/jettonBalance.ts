@@ -1,6 +1,8 @@
 import { getCache, setCache } from "../utils/cache";
 import { Cell } from "@ton/ton";
 
+const TONCENTER_KEY = import.meta.env.VITE_TONCENTER_KEY ?? "";
+
 const TONCENTER_API = "https://toncenter.com/api/v2";
 const TONCENTER_TESTNET_API = "https://testnet.toncenter.com/api/v2";
 
@@ -19,29 +21,43 @@ export async function fetchJettonBalance(
 ): Promise<number> {
 	const master = jettonMaster.trim();
 	const owner = ownerAddress.trim();
-	if (!master || !owner) return 0;
+	if (!master || !owner || master.length < 40 || owner.length < 40) return 0;
 
 	const cached = getCache<number>(cacheKey(master, owner, mode));
 	if (cached !== null) return cached;
 
 	const base = mode === "mainnet" ? TONCENTER_API : TONCENTER_TESTNET_API;
 
-	const fetchWithRetry = async (url: string, retries = 2): Promise<Response> => {
+	const fetchWithRetry = async (
+		url: string,
+		retries = 2,
+		timeoutMs = 8000
+	): Promise<Response> => {
+		const headers: HeadersInit = TONCENTER_KEY
+			? { "X-API-Key": TONCENTER_KEY }
+			: {};
 		for (let i = 0; i <= retries; i++) {
-			const res = await fetch(url);
-			if (res.status !== 429 || i === retries) return res;
+			const controller = new AbortController();
+			const timer = setTimeout(() => controller.abort(), timeoutMs);
+			try {
+				const res = await fetch(url, { headers, signal: controller.signal });
+				clearTimeout(timer);
+				if (res.status !== 429 || i === retries) return res;
+			} catch (e: any) {
+				clearTimeout(timer);
+				if (e.name !== "AbortError" && i === retries) throw e;
+			}
 			await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
 		}
 		throw new Error("Max retries");
 	};
 
 	try {
+		const stackParam = JSON.stringify([["tvm.Slice", owner]]);
 		const walletRes = await fetchWithRetry(
 			`${base}/runGetMethod?address=${encodeURIComponent(
 				master
-			)}&method=get_wallet_address&stack=${encodeURIComponent(
-				`[["tvm.Slice", "${owner}"]]`
-			)}`
+			)}&method=get_wallet_address&stack=${encodeURIComponent(stackParam)}`
 		);
 		if (!walletRes.ok) {
 			throw new Error(`get_wallet_address ${walletRes.status}`);
@@ -69,12 +85,12 @@ export async function fetchJettonBalance(
 		}
 		const balData = await balRes.json();
 		const rawValue = balData?.result?.stack?.[0]?.[1];
-		const rawBalance =
+		const rawBalanceBig =
 			typeof rawValue === "string"
-				? Number(BigInt(rawValue))
-				: 0;
+				? BigInt(rawValue)
+				: 0n;
 
-		const decimalsRes = await fetch(
+		const decimalsRes = await fetchWithRetry(
 			`${base}/getTokenData?address=${encodeURIComponent(master)}`
 		);
 		let decimals = 9;
@@ -84,7 +100,10 @@ export async function fetchJettonBalance(
 			if (decStr) decimals = Number(decStr);
 		}
 
-		const humanBalance = rawBalance / 10 ** decimals;
+		const divisor = BigInt(10 ** decimals);
+		const intPart = Number(rawBalanceBig / divisor);
+		const fracPart = Number(rawBalanceBig % divisor) / 10 ** decimals;
+		const humanBalance = intPart + fracPart;
 		setCache(
 			cacheKey(master, owner, mode),
 			humanBalance,
@@ -93,9 +112,6 @@ export async function fetchJettonBalance(
 		return humanBalance;
 	} catch (e) {
 		console.warn("fetchJettonBalance failed", master, e);
-		if (getCache<number>(cacheKey(master, owner, mode)) === null) {
-			setCache(cacheKey(master, owner, mode), 0, JETTON_BALANCE_TTL);
-		}
 		const cached = getCache<number>(cacheKey(master, owner, mode));
 		return cached ?? 0;
 	}

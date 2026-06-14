@@ -1,15 +1,54 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
 import { ChevronLeft, FolderOpen, Import, ScanFace, Fingerprint as FingerprintIcon } from "lucide-react";
 import { mnemonicNew, mnemonicValidate } from "@ton/crypto";
-import { useWallet, setCloudItem, getCloudItem } from "../store/WalletContext";
-import { encryptData, decryptData } from "../services/crypto";
+import {
+	useWallet,
+	setCloudItem,
+	getCloudItem,
+	getWebApp,
+	setWalletData,
+	getWalletData,
+	getWalletDeviceSecret,
+} from "../store/WalletContext";
+import {
+	decryptWalletData,
+	encryptWalletData,
+	isLegacyWalletData,
+} from "../services/crypto";
 import {
 	generateWallets,
 	fetchBalances,
 } from "../services/blockchain";
 import { PinPad } from "../components/PinPad";
 import { Icons } from "../icons/Icons";
+
+const FAKE_PIN_KEY = "wallet_fake_pin";
+
+const getFakePin = () => localStorage.getItem(FAKE_PIN_KEY) ?? "";
+
+async function decryptAndMigrateWallet(
+	encrypted: string,
+	pin: string
+): Promise<string> {
+	const legacy = isLegacyWalletData(encrypted);
+	const deviceSecret = await getWalletDeviceSecret(legacy);
+	const plaintext = await decryptWalletData(encrypted, pin, deviceSecret);
+
+	if (legacy) {
+		const upgraded = await encryptWalletData(plaintext, pin, deviceSecret);
+		await setWalletData(upgraded);
+	}
+
+	return plaintext;
+}
+
+async function createEmptyWalletSet() {
+	const seed = await mnemonicNew();
+	const wallets = await generateWallets(seed);
+	seed.fill("");
+	return wallets;
+}
 
 export const WelcomeView = () => {
 	const { setView, t } = useWallet();
@@ -48,22 +87,33 @@ export const RestorePromptView = () => {
 		setView,
 		t,
 		tempPin,
-		setMnemonic,
 		setWallets,
 		setBalances,
+		setWalletMode,
 		networkMode,
 		biometricAvailable,
+		setTempPin,
+		showToast,
 	} = useWallet();
 
 	const handleCreateNew = async () => {
 		try {
 			setView("loading");
 			const seed = await mnemonicNew();
-			const encrypted = await encryptData(seed.join(" "), tempPin);
-			await setCloudItem("wallet_data", encrypted);
+			if (!seed || seed.length !== 24 || seed.some((w) => !w)) {
+				throw new Error("Mnemonic generation failed: invalid result");
+			}
+			setWalletMode("real");
+			const deviceSecret = await getWalletDeviceSecret(true);
+			const encrypted = await encryptWalletData(
+				seed.join(" "),
+				tempPin,
+				deviceSecret
+			);
+			await setWalletData(encrypted);
 
-			setMnemonic(seed);
 			const generated = await generateWallets(seed);
+			seed.fill("");
 			setWallets(generated);
 			setTempPin("");
 
@@ -126,17 +176,20 @@ export const RestoreInputView = () => {
 		setView,
 		t,
 		tempPin,
-		setMnemonic,
 		setWallets,
 		setBalances,
+		setWalletMode,
 		networkMode,
 		showToast,
 		biometricAvailable,
+		setTempPin,
 	} = useWallet();
 	const [wordsInput, setWordsInput] = useState("");
 
 	const handleRestore = async () => {
 		const rawWords = wordsInput.trim().toLowerCase().split(/\s+/);
+
+		setWordsInput("");
 
 		if (rawWords.length !== 24) {
 			showToast("Enter exactly 24 words");
@@ -151,11 +204,17 @@ export const RestoreInputView = () => {
 
 		setView("loading");
 		try {
-			const encrypted = await encryptData(rawWords.join(" "), tempPin);
-			await setCloudItem("wallet_data", encrypted);
+			setWalletMode("real");
+			const deviceSecret = await getWalletDeviceSecret(true);
+			const encrypted = await encryptWalletData(
+				rawWords.join(" "),
+				tempPin,
+				deviceSecret
+			);
+			await setWalletData(encrypted);
 
-			setMnemonic(rawWords);
 			const generated = await generateWallets(rawWords);
+			rawWords.fill("");
 			setWallets(generated);
 			setTempPin("");
 
@@ -167,8 +226,9 @@ export const RestoreInputView = () => {
 
 			fetchBalances(generated, networkMode)
 				.then(setBalances)
-				.catch((e) => console.error(e));
+				.catch(() => {});
 		} catch {
+			rawWords.fill("");
 			showToast("Restoration error");
 			setView("welcome");
 		}
@@ -219,20 +279,33 @@ export const RestoreInputView = () => {
 };
 
 export const BiometricSetupView = () => {
-	const { t, biometricType, setView, tempPin, setBiometricEnabled, showToast } = useWallet();
+	const { t, language, biometricType, setView, tempPin, setBiometricEnabled, showToast } = useWallet();
 
 	const typeLabel = biometricType === "faceid" 
-		? t("biometric_faceid") 
+		? "Face ID"
 		: biometricType === "fingerprint" 
-			? t("biometric_fingerprint") 
-			: t("enable_biometric");
+			? "Touch ID"
+			: language === "ru"
+				? "биометрию"
+				: "biometrics";
+	const title =
+		language === "ru" ? `Настройте ${typeLabel}` : `Set up ${typeLabel}`;
+	const description =
+		language === "ru"
+			? `Используйте ${typeLabel} для быстрого входа и безопасного подтверждения операций.`
+			: `Use ${typeLabel} for quick access and secure transaction confirmation.`;
+	const enableLabel =
+		language === "ru"
+			? `ВКЛЮЧИТЬ ${typeLabel.toUpperCase()}`
+			: `ENABLE ${typeLabel.toUpperCase()}`;
+	const skipLabel = language === "ru" ? "ПРОПУСТИТЬ" : "SKIP";
 
 	const handleEnable = useCallback(() => {
-		const webApp = (window as any).Telegram?.WebApp;
-		if (webApp?.BiometricManager) {
-			webApp.BiometricManager.requestAccess({ reason: t("enable_biometric") }, (granted: boolean) => {
+		const app = getWebApp();
+		if (app?.BiometricManager) {
+			app.BiometricManager.requestAccess({ reason: t("enable_biometric") }, (granted: boolean) => {
 				if (granted) {
-					webApp.BiometricManager.updateBiometricToken(tempPin, (success: boolean) => {
+					app.BiometricManager.updateBiometricToken(tempPin, (success: boolean) => {
 						if (success) {
 							setBiometricEnabled(true);
 							showToast("Biometrics enabled");
@@ -266,10 +339,10 @@ export const BiometricSetupView = () => {
 					)}
 				</div>
 				<h2 className="text-2xl font-semibold mb-4">
-					{t("biometric_setup_title")}
+					{title}
 				</h2>
 				<p className="text-gray-500 text-sm max-w-[280px] leading-relaxed mb-8">
-					{t("biometric_setup_desc").replace("{{type}}", typeLabel)}
+					{description}
 				</p>
 			</div>
 			<div className="flex flex-col gap-4 pb-6">
@@ -277,13 +350,13 @@ export const BiometricSetupView = () => {
 					onClick={handleEnable}
 					className="w-full py-4 bg-white text-black font-semibold rounded-2xl active:scale-95 transition-transform"
 				>
-					{t("btn_enable").replace("{{type}}", typeLabel.toUpperCase())}
+					{enableLabel}
 				</button>
 				<button
 					onClick={() => setView("main")}
 					className="w-full py-4 bg-[#111] border border-[#222] text-gray-400 font-semibold rounded-2xl active:scale-95 transition-transform"
 				>
-					{t("btn_skip")}
+					{skipLabel}
 				</button>
 			</div>
 		</motion.div>
@@ -296,78 +369,99 @@ export const PinManager = () => {
 		setView,
 		setWallets,
 		setBalances,
-		setMnemonic,
 		showToast,
 		tempPin,
 		setTempPin,
 		networkMode,
+		setWalletMode,
 		setSeedRevealed,
+		setRevealedSeed,
 		biometricEnabled,
 		biometricAvailable,
 		setBiometricEnabled,
 		t,
 	} = useWallet();
-	const [pin, setPin] = useState("");
-	const [pinAttempts, setPinAttempts] = useState(() => {
-		const raw = localStorage.getItem("pin_attempts");
-		const parsed = raw ? Number(raw) : 0;
-		return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-	});
-	const [pinLockedUntil, setPinLockedUntil] = useState(() => {
-		const raw = localStorage.getItem("pin_locked_until");
-		const parsed = raw ? Number(raw) : 0;
-		return Number.isFinite(parsed) && parsed > Date.now() ? parsed : 0;
-	});
+	const [pinAttempts, setPinAttempts] = useState(0);
+	const [pinLockedUntil, setPinLockedUntil] = useState(0);
+	const [lockoutLoaded, setLockoutLoaded] = useState(false);
+	const [resetTrigger, setResetTrigger] = useState(0);
+	const isProcessingRef = useRef(false);
 
-	const handleBiometricAuth = useCallback(() => {
-		const webApp = (window as any).Telegram?.WebApp;
-		if (webApp?.BiometricManager && biometricEnabled && biometricAvailable) {
-			webApp.BiometricManager.authenticate(
-				{ reason: t("enter_pin") },
-				(success: boolean, token?: string) => {
-					if (success && token) {
-						setPin(token);
-					}
-				}
-			);
+	const saveLockout = useCallback(
+		async (attempts: number, lockedUntil: number) => {
+			await Promise.all([
+				setCloudItem("pin_attempts", String(attempts)),
+				setCloudItem("pin_locked_until", String(lockedUntil)),
+			]);
+			localStorage.setItem("pin_attempts", String(attempts));
+			if (lockedUntil > Date.now()) {
+				localStorage.setItem(
+					"pin_locked_until",
+					String(lockedUntil)
+				);
+			} else {
+				localStorage.removeItem("pin_locked_until");
+			}
+		},
+		[]
+	);
+
+	useEffect(() => {
+		Promise.all([
+			getCloudItem("pin_attempts"),
+			getCloudItem("pin_locked_until"),
+		]).then(([attemptsRaw, lockedRaw]) => {
+			const raw = localStorage.getItem("pin_attempts");
+			const localParsed = raw ? Number(raw) : 0;
+			const cloudParsed = attemptsRaw ? Number(attemptsRaw) : 0;
+			const attempts =
+				Number.isFinite(cloudParsed) && cloudParsed > 0
+					? cloudParsed
+					: Number.isFinite(localParsed) && localParsed > 0
+						? localParsed
+						: 0;
+
+			const lockedRaw2 = localStorage.getItem("pin_locked_until");
+			const localLocked = lockedRaw2 ? Number(lockedRaw2) : 0;
+			const cloudLocked = lockedRaw ? Number(lockedRaw) : 0;
+			const lockedUntil =
+				Number.isFinite(cloudLocked) && cloudLocked > Date.now()
+					? cloudLocked
+					: Number.isFinite(localLocked) && localLocked > Date.now()
+						? localLocked
+						: 0;
+
+			setPinAttempts(attempts);
+			setPinLockedUntil(lockedUntil);
+			setLockoutLoaded(true);
+
+			if (attempts > 0) {
+				saveLockout(attempts, lockedUntil);
+			}
+		});
+	}, [saveLockout]);
+
+	useEffect(() => {
+		if (pinAttempts > 0) {
+			saveLockout(pinAttempts, pinLockedUntil);
 		}
-	}, [biometricEnabled, biometricAvailable, t]);
-
-	useEffect(() => {
-		if (view === "pin-enter") {
-			handleBiometricAuth();
-		}
-	}, [view, handleBiometricAuth]);
-
-	useEffect(() => {
-		if (pin.length === 4) processPin();
-	}, [pin]);
-
-	useEffect(() => {
-		localStorage.setItem("pin_attempts", String(pinAttempts));
-	}, [pinAttempts]);
-
-	useEffect(() => {
-		if (pinLockedUntil > Date.now()) {
-			localStorage.setItem("pin_locked_until", String(pinLockedUntil));
-		} else {
-			localStorage.removeItem("pin_locked_until");
-		}
-	}, [pinLockedUntil]);
+	}, [pinAttempts, pinLockedUntil, saveLockout]);
 
 	useEffect(() => {
 		if (pinLockedUntil <= Date.now()) return;
+		const targetTime = pinLockedUntil;
 		const timer = window.setInterval(() => {
-			if (Date.now() >= pinLockedUntil) {
+			if (Date.now() >= targetTime) {
 				setPinLockedUntil(0);
 				setPinAttempts(0);
-				setPin("");
+				setResetTrigger((n) => n + 1);
+				window.clearInterval(timer);
 			}
 		}, 500);
 		return () => window.clearInterval(timer);
 	}, [pinLockedUntil]);
 
-	const registerPinFailure = () => {
+	const registerPinFailure = useCallback(() => {
 		setPinAttempts((current) => {
 			const next = current + 1;
 			if (next >= 5) {
@@ -378,136 +472,287 @@ export const PinManager = () => {
 				setPinLockedUntil(Date.now() + lockoutMs);
 				showToast("Too many attempts. Try again later.");
 			} else {
-				showToast("Invalid PIN code");
+				showToast(t("invalid_pin"));
 			}
 			return next;
 		});
-		setPin("");
-	};
+	}, [showToast, t]);
 
-	const processPin = useCallback(async () => {
-		if (pinLockedUntil > Date.now()) {
-			showToast("Too many attempts. Try again later.");
-			setPin("");
-			return;
-		}
-		if (view === "pin-create" || view === "pin-repeat") {
-			const trivial = ["0000","1111","2222","3333","4444","5555","6666","7777","8888","9999","1234","4321","2580"];
-			if (trivial.includes(pin)) {
-				console.warn("Weak PIN chosen:", pin);
+	const handlePinCreate = useCallback(
+		async (currentPin: string) => {
+			setTempPin(currentPin);
+			setView("pin-repeat");
+		},
+		[setTempPin, setView]
+	);
+
+	const handlePinRepeat = useCallback(
+		async (currentPin: string) => {
+			if (currentPin === tempPin) {
+				setView("restore-prompt");
+			} else {
+				showToast("PINs do not match");
+				setView("pin-create");
 			}
-		}
-		setTimeout(
-			() =>
-				(async () => {
-					if (view === "pin-create") {
-						setTempPin(pin);
-						setPin("");
-						setView("pin-repeat");
-					} else if (view === "pin-repeat") {
-						if (pin === tempPin) {
-							setView("restore-prompt");
-						} else {
-							showToast("PINs do not match");
-							setPin("");
-							setView("pin-create");
-						}
-					} else if (view === "pin-enter") {
-						setView("loading");
-						try {
-							const encrypted = await getCloudItem("wallet_data");
-							if (!encrypted) {
-								showToast("No wallet data found");
-								setView("welcome");
-								return;
-							}
-							const decryptedStr = await decryptData(encrypted, pin);
-							const seed = decryptedStr.split(/\s+/).filter(Boolean);
-							setMnemonic(seed);
-							const generated = await generateWallets(seed);
-							setWallets(generated);
+		},
+		[tempPin, showToast, setView]
+	);
 
-							setView("main");
-							setPinAttempts(0);
-							setPinLockedUntil(0);
-							localStorage.removeItem("pin_attempts");
-							localStorage.removeItem("pin_locked_until");
+	const handlePinEnter = useCallback(
+		async (currentPin: string) => {
+			setView("loading");
+			try {
+				const fakePin = getFakePin();
+				if (fakePin && currentPin === fakePin) {
+					const fakeWallets = await createEmptyWalletSet();
+					setWalletMode("decoy");
+					setWallets(fakeWallets);
+					setBalances({
+						whynot: 0,
+						ton: 0,
+						eth: 0,
+						sol: 0,
+						usdt: 0,
+						btc: 0,
+					});
+					setTempPin("");
+					setPinAttempts(0);
+					setPinLockedUntil(0);
+					saveLockout(0, 0);
+					setRevealedSeed(null);
+					setSeedRevealed(false);
+					setView("main");
+					return;
+				}
 
-							fetchBalances(generated, networkMode)
-								.then(setBalances)
-								.catch((e) => console.error(e));
-						} catch {
-							registerPinFailure();
-							setView("pin-enter");
-						}
-					} else if (view === "pin-confirm-seed") {
-						try {
-							const encrypted = await getCloudItem("wallet_data");
-							await decryptData(encrypted!, pin);
+				const encrypted = await getWalletData();
+				if (!encrypted) {
+					showToast("No wallet data found");
+					setView("welcome");
+					return;
+				}
+				const decryptedStr = await decryptAndMigrateWallet(
+					encrypted,
+					currentPin
+				);
+				const seed = decryptedStr.split(/\s+/).filter(Boolean);
+				setWalletMode("real");
+				const generated = await generateWallets(seed);
+				seed.fill("");
+				setWallets(generated);
 
-							setSeedRevealed(true);
-							setPin("");
-							setView("settings");
-						} catch {
-							registerPinFailure();
-						}
-					} else if (view === "pin-confirm-biometric") {
-						try {
-							const encrypted = await getCloudItem("wallet_data");
-							await decryptData(encrypted!, pin);
+				setView("main");
+				setTempPin("");
+				setPinAttempts(0);
+				setPinLockedUntil(0);
+				saveLockout(0, 0);
 
-							const webApp = (window as any).Telegram?.WebApp;
-							if (webApp?.BiometricManager) {
-								webApp.BiometricManager.updateBiometricToken(
-									pin,
-									(success: boolean) => {
-										if (success) {
-											setBiometricEnabled(true);
-											showToast("Biometric access enabled");
-											setPin("");
-											setView("settings");
-										} else {
-											showToast("Failed to store biometric token");
-											setPin("");
-										}
-									}
+				fetchBalances(generated, networkMode)
+					.then(setBalances)
+					.catch(() => {});
+			} catch {
+				registerPinFailure();
+				setView("pin-enter");
+			}
+		},
+		[
+			setWallets,
+			setView,
+			showToast,
+			networkMode,
+			setBalances,
+			registerPinFailure,
+			setTempPin,
+			saveLockout,
+			setWalletMode,
+			setSeedRevealed,
+			setRevealedSeed,
+		]
+	);
+
+	const handlePinConfirmSeed = useCallback(
+		async (currentPin: string) => {
+			setView("loading");
+			try {
+				const encrypted = await getWalletData();
+				if (!encrypted) {
+					showToast("No wallet data found");
+					setView("settings");
+					return;
+				}
+				const seed = await decryptAndMigrateWallet(
+					encrypted,
+					currentPin
+				);
+
+				setWalletMode("real");
+				setRevealedSeed(seed);
+				setSeedRevealed(true);
+				setView("settings");
+			} catch {
+				registerPinFailure();
+				setView("pin-confirm-seed");
+			}
+		},
+			[
+				setView,
+				showToast,
+				setSeedRevealed,
+				setRevealedSeed,
+				setWalletMode,
+				registerPinFailure,
+			]
+		);
+
+	const handlePinConfirmBiometric = useCallback(
+		async (currentPin: string) => {
+			setView("loading");
+			try {
+				const encrypted = await getWalletData();
+				if (!encrypted) {
+					showToast("No wallet data found");
+					setView("settings");
+					return;
+				}
+				await decryptAndMigrateWallet(encrypted, currentPin);
+				setWalletMode("real");
+
+				const app = getWebApp();
+				if (app?.BiometricManager) {
+					app.BiometricManager.updateBiometricToken(
+						currentPin,
+						(success: boolean) => {
+							if (success) {
+								setBiometricEnabled(true);
+								showToast("Biometric access enabled");
+								setView("settings");
+							} else {
+								showToast(
+									"Failed to store biometric token"
 								);
 							}
-						} catch {
-							registerPinFailure();
 						}
+					);
+				}
+			} catch {
+				registerPinFailure();
+				setView("pin-confirm-biometric");
+			}
+		},
+		[
+			setView,
+			showToast,
+			setBiometricEnabled,
+			setWalletMode,
+			registerPinFailure,
+		]
+	);
+
+	const handleBiometricAuth = useCallback(() => {
+		const app = getWebApp();
+		if (app?.BiometricManager && biometricEnabled && biometricAvailable) {
+			app.BiometricManager.authenticate(
+				{ reason: t("enter_pin") },
+				(success: boolean, token?: string) => {
+					if (success && token && token.length > 0) {
+						handlePinEnter(token);
 					}
-				})().catch((e) => console.warn("processPin error:", e)),
-			200
-		);
-	}, [
-		view,
-		setView,
-		tempPin,
-		setTempPin,
-		showToast,
-		pin,
-		pinAttempts,
-		pinLockedUntil,
-		setMnemonic,
-		setWallets,
-		setBalances,
-		networkMode,
-		setSeedRevealed,
-		setBiometricEnabled,
-		registerPinFailure,
-	]);
+				}
+			);
+		}
+	}, [biometricEnabled, biometricAvailable, t, handlePinEnter]);
+
+	useEffect(() => {
+		if (view === "pin-enter") {
+			handleBiometricAuth();
+		}
+	}, [view, handleBiometricAuth]);
+
+	const processPin = useCallback(
+		async (completedPin: string) => {
+			if (!lockoutLoaded) return;
+			if (isProcessingRef.current) return;
+			if (pinLockedUntil > Date.now()) {
+				showToast("Too many attempts. Try again later.");
+				return;
+			}
+
+			if (view === "pin-create") {
+				const trivial = [
+					"0000",
+					"1111",
+					"2222",
+					"3333",
+					"4444",
+					"5555",
+					"6666",
+					"7777",
+					"8888",
+					"9999",
+					"1234",
+					"4321",
+					"2580",
+				];
+				if (trivial.includes(completedPin)) {
+					showToast(t("pin_too_simple"));
+					return;
+				}
+			}
+
+			isProcessingRef.current = true;
+			const currentView = view;
+
+			setTimeout(async () => {
+				try {
+					if (currentView === "pin-create") {
+						await handlePinCreate(completedPin);
+					} else if (currentView === "pin-repeat") {
+						await handlePinRepeat(completedPin);
+					} else if (currentView === "pin-enter") {
+						await handlePinEnter(completedPin);
+					} else if (currentView === "pin-confirm-seed") {
+						await handlePinConfirmSeed(completedPin);
+					} else if (currentView === "pin-confirm-biometric") {
+						await handlePinConfirmBiometric(completedPin);
+					}
+				} catch (e) {
+					console.warn("processPin error:", e);
+				} finally {
+					isProcessingRef.current = false;
+				}
+			}, 200);
+		},
+		[
+			view,
+			pinLockedUntil,
+			lockoutLoaded,
+			showToast,
+			t,
+			handlePinCreate,
+			handlePinRepeat,
+			handlePinEnter,
+			handlePinConfirmSeed,
+			handlePinConfirmBiometric,
+		]
+	);
+
+	const handlePinComplete = useCallback(
+		(completedPin: string) => {
+			processPin(completedPin);
+		},
+		[processPin]
+	);
 
 	const title =
 		view === "pin-create"
-			? "Create PIN"
+			? t("pin_create")
 			: view === "pin-repeat"
-				? "Repeat PIN"
+				? t("pin_repeat")
 				: view === "pin-confirm-seed"
-					? "Enter PIN to View Seed"
+					? t("pin_confirm_seed")
 					: view === "pin-confirm-biometric"
-						? "Enter PIN to Enable Biometrics"
-						: "Enter PIN";
+						? t("pin_confirm_bio")
+						: t("pin_enter");
 
 	return (
 		<motion.div
@@ -516,7 +761,11 @@ export const PinManager = () => {
 			exit={{ opacity: 0 }}
 			className="flex flex-col min-h-screen"
 		>
-			<PinPad title={title} pin={pin} setPin={setPin} />
+			<PinPad
+				title={title}
+				onComplete={handlePinComplete}
+				resetTrigger={resetTrigger}
+			/>
 		</motion.div>
 	);
 };

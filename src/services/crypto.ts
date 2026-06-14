@@ -1,11 +1,28 @@
+const LEGACY_ITERATIONS = 100_000;
+const CURRENT_ITERATIONS = 600_000;
+
+interface EncryptedWalletV2 {
+	v: 2;
+	alg: "AES-GCM-256";
+	kdf: "PBKDF2-SHA256";
+	iterations: number;
+	deviceBound: boolean;
+	salt: string;
+	iv: string;
+	data: string;
+}
+
 async function getDerivationKey(
 	pin: string,
-	salt: Uint8Array
+	salt: Uint8Array,
+	iterations: number,
+	deviceSecret?: string | null
 ): Promise<CryptoKey> {
 	const enc = new TextEncoder();
+	const keyInput = deviceSecret ? `${pin}:${deviceSecret}` : pin;
 	const keyMaterial = await window.crypto.subtle.importKey(
 		"raw",
-		enc.encode(pin),
+		enc.encode(keyInput),
 		{ name: "PBKDF2" },
 		false,
 		["deriveBits", "deriveKey"]
@@ -14,7 +31,7 @@ async function getDerivationKey(
 		{
 			name: "PBKDF2",
 			salt: salt as unknown as BufferSource,
-			iterations: 100000,
+			iterations,
 			hash: "SHA-256",
 		},
 		keyMaterial,
@@ -46,9 +63,22 @@ function base64ToBytes(b64: string): Uint8Array {
 }
 
 export async function encryptData(text: string, pin: string): Promise<string> {
+	return encryptWalletData(text, pin, null);
+}
+
+export async function encryptWalletData(
+	text: string,
+	pin: string,
+	deviceSecret: string | null
+): Promise<string> {
 	const salt = window.crypto.getRandomValues(new Uint8Array(16));
 	const iv = window.crypto.getRandomValues(new Uint8Array(12));
-	const key = await getDerivationKey(pin, salt);
+	const key = await getDerivationKey(
+		pin,
+		salt,
+		CURRENT_ITERATIONS,
+		deviceSecret
+	);
 	const enc = new TextEncoder();
 	const encryptedContent = await window.crypto.subtle.encrypt(
 		{ name: "AES-GCM", iv: iv as unknown as BufferSource },
@@ -56,35 +86,101 @@ export async function encryptData(text: string, pin: string): Promise<string> {
 		enc.encode(text)
 	);
 
-	const combined = new Uint8Array(
-		salt.length + iv.length + encryptedContent.byteLength
-	);
-	combined.set(salt, 0);
-	combined.set(iv, salt.length);
-	combined.set(new Uint8Array(encryptedContent), salt.length + iv.length);
-	const result = bytesToBase64(combined);
+	const result: EncryptedWalletV2 = {
+		v: 2,
+		alg: "AES-GCM-256",
+		kdf: "PBKDF2-SHA256",
+		iterations: CURRENT_ITERATIONS,
+		deviceBound: Boolean(deviceSecret),
+		salt: bytesToBase64(salt),
+		iv: bytesToBase64(iv),
+		data: bytesToBase64(new Uint8Array(encryptedContent)),
+	};
 	salt.fill(0);
 	iv.fill(0);
-	return result;
+	return JSON.stringify(result);
 }
 
 export async function decryptData(
 	encryptedBase64: string,
 	pin: string
 ): Promise<string> {
+	return decryptWalletData(encryptedBase64, pin, null);
+}
+
+export function isLegacyWalletData(encrypted: string): boolean {
+	return !encrypted.trimStart().startsWith("{");
+}
+
+export async function decryptWalletData(
+	encrypted: string,
+	pin: string,
+	deviceSecret: string | null
+): Promise<string> {
+	if (!isLegacyWalletData(encrypted)) {
+		const payload = JSON.parse(encrypted) as Partial<EncryptedWalletV2>;
+		if (
+			payload.v !== 2 ||
+			payload.alg !== "AES-GCM-256" ||
+			payload.kdf !== "PBKDF2-SHA256" ||
+			typeof payload.iterations !== "number" ||
+			payload.iterations < CURRENT_ITERATIONS ||
+			typeof payload.salt !== "string" ||
+			typeof payload.iv !== "string" ||
+			typeof payload.data !== "string"
+		) {
+			throw new Error("Unsupported encrypted wallet format");
+		}
+		if (payload.deviceBound && !deviceSecret) {
+			throw new Error("Wallet device secret is unavailable");
+		}
+
+		const salt = base64ToBytes(payload.salt);
+		const iv = base64ToBytes(payload.iv);
+		const data = base64ToBytes(payload.data);
+		try {
+			const key = await getDerivationKey(
+				pin,
+				salt,
+				payload.iterations,
+				payload.deviceBound ? deviceSecret : null
+			);
+			const decryptedContent = await window.crypto.subtle.decrypt(
+				{ name: "AES-GCM", iv: iv as unknown as BufferSource },
+				key,
+				data
+			);
+			return new TextDecoder().decode(decryptedContent);
+		} finally {
+			salt.fill(0);
+			iv.fill(0);
+			data.fill(0);
+		}
+	}
+
+	const encryptedBase64 = encrypted;
 	const combined = base64ToBytes(encryptedBase64);
 	const salt = combined.slice(0, 16);
 	const iv = combined.slice(16, 28);
 	const data = combined.slice(28);
 
-	const key = await getDerivationKey(pin, salt);
-	const decryptedContent = await window.crypto.subtle.decrypt(
-		{ name: "AES-GCM", iv: iv as unknown as BufferSource },
-		key,
-		data
-	);
-	const result = new TextDecoder().decode(decryptedContent);
-	salt.fill(0);
-	iv.fill(0);
-	return result;
+	try {
+		const key = await getDerivationKey(
+			pin,
+			salt,
+			LEGACY_ITERATIONS,
+			null
+		);
+		const decryptedContent = await window.crypto.subtle.decrypt(
+			{ name: "AES-GCM", iv: iv as unknown as BufferSource },
+			key,
+			data
+		);
+		return new TextDecoder().decode(decryptedContent);
+	} finally {
+		combined.fill(0);
+		salt.fill(0);
+		iv.fill(0);
+		data.fill(0);
+	}
 }

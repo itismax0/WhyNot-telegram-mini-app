@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -7,7 +7,7 @@ import {
 	Settings,
 	Wallet,
 } from "lucide-react";
-import { WalletProvider, useWallet, getCloudItem } from "./store/WalletContext";
+import { WalletProvider, useWallet, getWalletData } from "./store/WalletContext";
 import {
 	WelcomeView,
 	PinManager,
@@ -278,8 +278,29 @@ const BottomNav = () => {
 };
 
 const AppContent = () => {
-	const { view, setView, setRates, setChanges, toast, baseCurrency } = useWallet();
+	const {
+		view,
+		setView,
+		setRates,
+		setChanges,
+		toast,
+		baseCurrency,
+		wallets,
+		lockWallet,
+	} = useWallet();
 	const showBottomNav = ["main", "swap", "settings", "more"].includes(view);
+	const walletSyncCheckedRef = useRef(false);
+	const lastActivityRef = useRef(0);
+	const hiddenAtRef = useRef<number | null>(null);
+	const checkWalletSync = useCallback(async () => {
+		setView("loading");
+		const encrypted = await getWalletData();
+		if (encrypted) {
+			setView("pin-enter");
+		} else {
+			setView("welcome");
+		}
+	}, [setView]);
 
 	useEffect(() => {
 		if (WebApp) {
@@ -316,21 +337,63 @@ const AppContent = () => {
 		};
 
 		fetchRates();
-		checkWalletSync();
+		if (!walletSyncCheckedRef.current) {
+			walletSyncCheckedRef.current = true;
+			checkWalletSync();
+		}
 
 		const interval = setInterval(fetchRates, 60000);
 		return () => clearInterval(interval);
-	}, [baseCurrency]);
+	}, [baseCurrency, checkWalletSync]);
 
-	const checkWalletSync = async () => {
-		setView("loading");
-		const encrypted = await getCloudItem("wallet_data");
-		if (encrypted) {
-			setView("pin-enter");
-		} else {
-			setView("welcome");
-		}
-	};
+	useEffect(() => {
+		if (!wallets) return;
+		lastActivityRef.current = Date.now();
+
+		const AUTO_LOCK_MS = 2 * 60_000;
+		const BACKGROUND_LOCK_MS = 30_000;
+		const markActivity = () => {
+			lastActivityRef.current = Date.now();
+		};
+		const checkIdle = () => {
+			if (Date.now() - lastActivityRef.current >= AUTO_LOCK_MS) {
+				lockWallet();
+			}
+		};
+		const handleVisibility = () => {
+			if (document.hidden) {
+				hiddenAtRef.current = Date.now();
+				return;
+			}
+			if (
+				hiddenAtRef.current &&
+				Date.now() - hiddenAtRef.current >= BACKGROUND_LOCK_MS
+			) {
+				lockWallet();
+			}
+			hiddenAtRef.current = null;
+			markActivity();
+		};
+
+		const events: Array<keyof WindowEventMap> = [
+			"pointerdown",
+			"keydown",
+			"touchstart",
+		];
+		events.forEach((event) =>
+			window.addEventListener(event, markActivity, { passive: true })
+		);
+		document.addEventListener("visibilitychange", handleVisibility);
+		const timer = window.setInterval(checkIdle, 10_000);
+
+		return () => {
+			events.forEach((event) =>
+				window.removeEventListener(event, markActivity)
+			);
+			document.removeEventListener("visibilitychange", handleVisibility);
+			window.clearInterval(timer);
+		};
+	}, [lockWallet, wallets]);
 
 	return (
 		<div className="bg-black min-h-screen text-white flex justify-center font-sans selection:bg-white selection:text-black">

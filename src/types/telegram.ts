@@ -4,6 +4,31 @@ export interface TelegramCloudStorage {
 	removeItem(key: string, callback: (error: any) => void): void;
 }
 
+export interface TelegramSecureStorage {
+	getItem(
+		key: string,
+		callback: (
+			error: any,
+			value: string | null,
+			canRestore?: boolean
+		) => void
+	): void;
+	setItem(
+		key: string,
+		value: string,
+		callback: (error: any, stored?: boolean) => void
+	): void;
+	restoreItem(
+		key: string,
+		callback: (error: any, value?: string | null) => void
+	): void;
+	removeItem(
+		key: string,
+		callback: (error: any, removed?: boolean) => void
+	): void;
+	clear(callback: (error: any, cleared?: boolean) => void): void;
+}
+
 export interface TelegramBiometricManager {
 	isInited: boolean;
 	isBiometricAvailable: boolean;
@@ -36,6 +61,7 @@ export interface TelegramWebApp {
 	initData: string;
 	initDataUnsafe: any;
 	CloudStorage: TelegramCloudStorage;
+	SecureStorage?: TelegramSecureStorage;
 	BiometricManager: TelegramBiometricManager;
 	HapticFeedback: TelegramHapticFeedback;
 	version: string;

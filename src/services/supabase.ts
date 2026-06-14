@@ -25,6 +25,9 @@ export async function upsertUsername(
 	if (!sb) return false;
 
 	const cleanUser = username.replace("@", "").trim().toLowerCase();
+	if (!cleanUser || cleanUser.length < 3 || cleanUser.length > 32) {
+		return false;
+	}
 	const { error } = await sb.from(TABLE).upsert(
 		{
 			username: cleanUser,
@@ -35,7 +38,11 @@ export async function upsertUsername(
 		{ onConflict: "username" }
 	);
 	if (error) {
-		console.error("Supabase upsert error:", error);
+		if (import.meta.env.DEV) {
+			console.error("Supabase upsert error:", error);
+		} else {
+			console.error("Supabase upsert failed");
+		}
 		return false;
 	}
 	return true;
@@ -48,6 +55,9 @@ export async function getUsernameRegistry(
 	if (!sb) return null;
 
 	const cleanUser = username.replace("@", "").trim().toLowerCase();
+	if (!cleanUser || cleanUser.length < 3 || cleanUser.length > 32) {
+		return null;
+	}
 	const { data, error } = await sb
 		.from(TABLE)
 		.select("ton_address, eth_address, sol_address")
@@ -56,7 +66,11 @@ export async function getUsernameRegistry(
 
 	if (error || !data) {
 		if (error?.code !== "PGRST116") {
-			console.warn("Supabase query error:", error);
+			if (import.meta.env.DEV) {
+				console.warn("Supabase query error:", error);
+			} else {
+				console.warn("Supabase query failed");
+			}
 		}
 		return null;
 	}

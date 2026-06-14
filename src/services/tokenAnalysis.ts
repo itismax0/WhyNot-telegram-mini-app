@@ -85,7 +85,8 @@ async function searchCoinGecko(query: string): Promise<any[]> {
 	}
 	const j = await r.json();
 	const coins = Array.isArray(j?.coins) ? j.coins : [];
-	setCache(cacheKey, coins, 5 * 60_000);
+	const ttl = coins.length > 0 ? 5 * 60_000 : 30_000;
+	setCache(cacheKey, coins, ttl);
 	return coins;
 }
 
@@ -97,7 +98,12 @@ async function fetchCoinDetails(coingeckoId: string): Promise<any | null> {
 		const r = await fetchWithTimeout(
 			`${COINGECKO_BASE}/coins/${encodeURIComponent(coingeckoId)}?localization=false&tickers=false&community_data=false&developer_data=false&sparkline=false`
 		);
-		if (!r.ok) return null;
+		if (!r.ok) {
+			if (r.status === 429) {
+				throw new Error("CoinGecko rate limit");
+			}
+			return null;
+		}
 		const j = await r.json();
 		setCache(cacheKey, j, 5 * 60_000);
 		return j;
@@ -117,7 +123,8 @@ async function fetchDexScreener(symbolOrContract: string): Promise<any[]> {
 		if (!r.ok) return [];
 		const j = await r.json();
 		const pairs = Array.isArray(j?.pairs) ? j.pairs : [];
-		setCache(cacheKey, pairs, 5 * 60_000);
+		const ttl = pairs.length > 0 ? 5 * 60_000 : 30_000;
+		setCache(cacheKey, pairs, ttl);
 		return pairs;
 	} catch {
 		return [];
@@ -183,50 +190,53 @@ export async function analyzeToken(
 			};
 		}
 
-		const candidates: TokenCandidate[] = await Promise.all(
-			top.map(async (c) => {
-				const [details, dexPairs] = await Promise.all([
-					fetchCoinDetails(c.id),
-					fetchDexScreener((c.symbol || c.id).toUpperCase()),
-				]);
-				const md = details?.market_data;
-				const desc = translateDescription(details?.description);
-				const topPair = bestDexPair(dexPairs);
-				return {
-					coingeckoId: c.id,
-					symbol: c.symbol,
-					name: c.name,
-					marketCapRank: c.market_cap_rank ?? null,
-					thumb: c.thumb || details?.image?.thumb,
-					priceUsd: md?.current_price?.usd,
-					change24h: md?.price_change_percentage_24h,
-					marketCap: md?.market_cap?.usd,
-					totalVolume24h: md?.total_volume?.usd,
-					circulatingSupply: md?.circulating_supply,
-					totalSupply: md?.total_supply,
-					ath: md?.ath?.usd,
-					atl: md?.atl?.usd,
-					descriptionEn: desc.en,
-					descriptionRu: desc.ru,
-					homepage: details?.links?.homepage?.[0],
-					dexTopPair: topPair
-						? {
-								chainId: topPair.chainId,
-								dexId: topPair.dexId,
-								url: topPair.url,
-								priceUsd: topPair.priceUsd,
-								liquidityUsd: topPair.liquidity?.usd,
-								volume24h: topPair.volume?.h24,
-								fdv: topPair.fdv,
-								pairAddress: topPair.pairAddress,
-								baseToken: topPair.baseToken,
-								quoteToken: topPair.quoteToken,
-							}
-						: undefined,
-					dexPairCount: dexPairs.length,
-				};
-			})
-		);
+		const candidates: TokenCandidate[] = [];
+		for (let i = 0; i < top.length; i++) {
+			const c = top[i];
+			const details = await fetchCoinDetails(c.id);
+			const dexPairs = await fetchDexScreener(
+				(c.symbol || c.id).toUpperCase()
+			);
+			const md = details?.market_data;
+			const desc = translateDescription(details?.description);
+			const topPair = bestDexPair(dexPairs);
+			candidates.push({
+				coingeckoId: c.id,
+				symbol: c.symbol,
+				name: c.name,
+				marketCapRank: c.market_cap_rank ?? null,
+				thumb: c.thumb || details?.image?.thumb,
+				priceUsd: md?.current_price?.usd,
+				change24h: md?.price_change_percentage_24h,
+				marketCap: md?.market_cap?.usd,
+				totalVolume24h: md?.total_volume?.usd,
+				circulatingSupply: md?.circulating_supply,
+				totalSupply: md?.total_supply,
+				ath: md?.ath?.usd,
+				atl: md?.atl?.usd,
+				descriptionEn: desc.en,
+				descriptionRu: desc.ru,
+				homepage: details?.links?.homepage?.[0],
+				dexTopPair: topPair
+					? {
+							chainId: topPair.chainId,
+							dexId: topPair.dexId,
+							url: topPair.url,
+							priceUsd: topPair.priceUsd,
+							liquidityUsd: topPair.liquidity?.usd,
+							volume24h: topPair.volume?.h24,
+							fdv: topPair.fdv,
+							pairAddress: topPair.pairAddress,
+							baseToken: topPair.baseToken,
+							quoteToken: topPair.quoteToken,
+						}
+					: undefined,
+				dexPairCount: dexPairs.length,
+			});
+			if (i < top.length - 1) {
+				await new Promise((r) => setTimeout(r, 200));
+			}
+		}
 
 		candidates.sort((a, b) => {
 			const ra = a.marketCapRank ?? 99999;
@@ -244,14 +254,17 @@ export async function analyzeToken(
 		setCache(cacheKey, result, 5 * 60_000);
 		return result;
 	} catch (e: any) {
+		const errorMsg = e?.message || "Unknown error";
 		const result: TokenAnalysisResult = {
 			query: trimmed,
 			resolvedAt: Date.now(),
 			candidates: [],
 			bestMatch: null,
-			error: e?.message || "Unknown error",
+			error: errorMsg,
 		};
-		setCache(cacheKey, result, 60_000);
+		const isRateLimit =
+			errorMsg.includes("429") || errorMsg.includes("rate limit");
+		setCache(cacheKey, result, isRateLimit ? 60_000 : 5000);
 		return result;
 	}
 }

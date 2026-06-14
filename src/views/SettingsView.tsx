@@ -21,7 +21,7 @@ import {
 	X,
 	Zap,
 } from "lucide-react";
-import { useWallet, removeCloudItem } from "../store/WalletContext";
+import { useWallet, removeWalletData } from "../store/WalletContext";
 import { aiChat, detectKeyProvider } from "../services/aiAssistant";
 
 const SettingsRow = ({
@@ -83,11 +83,12 @@ export const SettingsView = () => {
 		setLanguage,
 		baseCurrency,
 		setBaseCurrency,
-		mnemonic,
 		t,
 		showToast,
 		seedRevealed,
 		setSeedRevealed,
+		revealedSeed,
+		setRevealedSeed,
 		groqKey,
 		setGroqKey,
 		openrouterKey,
@@ -103,6 +104,10 @@ export const SettingsView = () => {
 	const [notificationsEnabled, setNotificationsEnabled] = useState(
 		() => localStorage.getItem("wallet_notifications") !== "false"
 	);
+	const [fakePinDraft, setFakePinDraft] = useState(
+		() => localStorage.getItem("wallet_fake_pin") ?? ""
+	);
+	const [showFakePinEditor, setShowFakePinEditor] = useState(false);
 	const [testing, setTesting] = useState(false);
 	const [testResult, setTestResult] = useState<
 		null | { ok: boolean; msg: string; provider?: string }
@@ -194,9 +199,44 @@ export const SettingsView = () => {
 		setView("pin-confirm-seed");
 	}, [setView]);
 
+	const handleFakePinSave = useCallback(() => {
+		const value = fakePinDraft.trim();
+		if (value && !/^\d{4}$/.test(value)) {
+			showToast(isRu ? "Нужен 4-значный PIN" : "Use a 4-digit PIN");
+			return;
+		}
+		if (value) {
+			localStorage.setItem("wallet_fake_pin", value);
+			showToast(isRu ? "Фейковый PIN сохранён" : "Fake PIN saved");
+		} else {
+			localStorage.removeItem("wallet_fake_pin");
+			showToast(isRu ? "Фейковый PIN удалён" : "Fake PIN cleared");
+		}
+		setShowFakePinEditor(false);
+	}, [fakePinDraft, isRu, showToast]);
+
+	const handleFakePinClear = useCallback(() => {
+		localStorage.removeItem("wallet_fake_pin");
+		setFakePinDraft("");
+		setShowFakePinEditor(false);
+		showToast(isRu ? "Фейковый PIN удалён" : "Fake PIN cleared");
+	}, [isRu, showToast]);
+
 	useEffect(() => {
-		return () => setSeedRevealed(false);
-	}, [setSeedRevealed]);
+		if (!seedRevealed) return;
+		const timer = window.setTimeout(() => {
+			setSeedRevealed(false);
+			setRevealedSeed(null);
+		}, 30_000);
+		return () => window.clearTimeout(timer);
+	}, [seedRevealed, setRevealedSeed, setSeedRevealed]);
+
+	useEffect(() => {
+		return () => {
+			setSeedRevealed(false);
+			setRevealedSeed(null);
+		};
+	}, [setRevealedSeed, setSeedRevealed]);
 
 	const handleWipeWallet = useCallback(async () => {
 		if (
@@ -206,8 +246,7 @@ export const SettingsView = () => {
 					: "Are you absolutely sure you want to delete this wallet? Your cloud data will be wiped."
 			)
 		) {
-			await removeCloudItem("wallet_data");
-			localStorage.removeItem("wallet_data");
+			await removeWalletData();
 			localStorage.removeItem("pin_attempts");
 			localStorage.removeItem("pin_locked_until");
 			window.location.reload();
@@ -552,7 +591,7 @@ export const SettingsView = () => {
 				{isRu ? "Безопасность" : "Security"}
 			</h2>
 			<section className="overflow-hidden rounded-[28px] border border-white/[0.04] bg-[#1c1c1e]">
-				{!seedRevealed ? (
+				{!seedRevealed || !revealedSeed ? (
 					<SettingsRow
 						icon={
 							<SettingsIcon className="bg-gradient-to-br from-[#f2a43c] to-[#d66d19]">
@@ -574,7 +613,66 @@ export const SettingsView = () => {
 							</span>
 						</div>
 						<div className="selectable-text select-text rounded-2xl border border-red-500/15 bg-[#111113] p-4 font-mono text-xs leading-relaxed text-[#ff6961]">
-							{mnemonic.join(" ")}
+							{revealedSeed}
+						</div>
+					</div>
+				)}
+				<SettingsRow
+					icon={
+						<SettingsIcon className="bg-gradient-to-br from-[#6a7cff] to-[#3a4fe0]">
+							<Key size={24} strokeWidth={2.2} />
+						</SettingsIcon>
+					}
+					title={isRu ? "Фейковый PIN" : "Fake PIN"}
+					value={
+						localStorage.getItem("wallet_fake_pin")
+							? isRu
+								? "Вкл"
+								: "On"
+							: isRu
+								? "Выкл"
+								: "Off"
+					}
+					onClick={() => setShowFakePinEditor((v) => !v)}
+				/>
+				{showFakePinEditor && (
+					<div className="p-4 border-t border-white/[0.04]">
+						<div className="rounded-2xl border border-white/[0.06] bg-[#111113] p-4">
+							<label className="mb-2 block text-xs font-semibold uppercase tracking-[0.08em] text-[#77777d]">
+								{isRu ? "Новый PIN" : "New PIN"}
+							</label>
+							<input
+								type="password"
+								inputMode="numeric"
+								maxLength={4}
+								value={fakePinDraft}
+								onChange={(event) =>
+									setFakePinDraft(event.target.value.replace(/\D/g, "").slice(0, 4))
+								}
+								placeholder={isRu ? "4 цифры" : "4 digits"}
+								className="w-full rounded-[14px] border border-white/[0.08] bg-black/30 px-4 py-3 text-[15px] font-mono text-white outline-none"
+							/>
+							<p className="mt-2 text-[11px] leading-relaxed text-[#77777d]">
+								{isRu
+									? "Открывает пустой кошелёк без доступа к реальным данным."
+									: "Opens an empty wallet without touching real data."}
+							</p>
+							<div className="mt-4 flex gap-2">
+								<button
+									type="button"
+									onClick={handleFakePinSave}
+									className="flex-1 rounded-[14px] bg-white px-4 py-3 text-sm font-semibold text-black"
+								>
+									{isRu ? "Сохранить" : "Save"}
+								</button>
+								<button
+									type="button"
+									onClick={handleFakePinClear}
+									className="rounded-[14px] border border-white/[0.08] bg-[#151518] px-4 py-3 text-sm font-semibold text-[#b4b4bb]"
+								>
+									{isRu ? "Удалить" : "Clear"}
+								</button>
+							</div>
 						</div>
 					</div>
 				)}
@@ -593,6 +691,8 @@ export const SettingsView = () => {
 				<span className="flex-1 text-[16px] font-semibold">{t("logout")}</span>
 				<ChevronRight size={22} className="text-[#6d3d3d]" />
 			</button>
+
+
 		</motion.div>
 	);
 };

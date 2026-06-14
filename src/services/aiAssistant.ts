@@ -8,11 +8,8 @@ import {
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
-const GROQ_ENV_KEY = import.meta.env.VITE_GROQ_KEY ?? "";
-const OPENROUTER_ENV_KEY = import.meta.env.VITE_OPENROUTER_KEY ?? "";
-
-export const GROQ_DEFAULT_KEY = GROQ_ENV_KEY;
-export const OPENROUTER_DEFAULT_KEY = OPENROUTER_ENV_KEY;
+export const GROQ_DEFAULT_KEY = "";
+export const OPENROUTER_DEFAULT_KEY = "";
 
 const GROQ_MODELS = [
 	"llama-3.3-70b-versatile",
@@ -136,14 +133,28 @@ async function callProvider(
 
 			if (!res.ok) {
 				const text = await res.text().catch(() => "");
-				const isRateLimit = res.status === 429;
+				const isRateLimit =
+					res.status === 429 || res.status === 402;
 				if (isRateLimit) {
+					console.error(
+						`[AI] ${providerLabel} rate limited on ${model}:`,
+						text.substring(0, 200)
+					);
 					throw new Error(
-						`${providerLabel} RATE_LIMITED ${res.status} on ${model}: ${text.substring(0, 200)}`
+						`${providerLabel} RATE_LIMITED on ${model}`
 					);
 				}
+				if (res.status === 401 || res.status === 403) {
+					throw new Error(
+						`Invalid API key for ${providerLabel}`
+					);
+				}
+				console.error(
+					`[AI] ${providerLabel} ${res.status} on ${model}:`,
+					text.substring(0, 200)
+				);
 				throw new Error(
-					`${providerLabel} ${res.status} on ${model}: ${text.substring(0, 200)}`
+					`${providerLabel} request failed with status ${res.status} on ${model}`
 				);
 			}
 
@@ -180,6 +191,16 @@ export async function aiChat({
 	openrouterKey,
 	context,
 }: AIChatOptions): Promise<AIChatResult> {
+	if (!messages || messages.length === 0) {
+		throw new Error("Cannot send empty messages array to AI");
+	}
+
+	const controller = new AbortController();
+	const timeoutId = setTimeout(() => controller.abort(), 30000);
+	if (signal) {
+		signal.addEventListener("abort", () => controller.abort());
+	}
+
 	const systemPrompt = buildSystemPrompt(context || null);
 	const allMessages: AIMessage[] = [
 		{ role: "system", content: systemPrompt },
@@ -228,7 +249,7 @@ export async function aiChat({
 
 	const tryProvider = async (provider: Provider, key: string): Promise<AIChatResult | null> => {
 		try {
-			return await callProvider(provider, key, allMessages, temperature, maxTokens, signal);
+			return await callProvider(provider, key, allMessages, temperature, maxTokens, controller.signal);
 		} catch (e: any) {
 			if (e?.name === "AbortError") throw e;
 			lastErrors.push(e);
@@ -240,30 +261,34 @@ export async function aiChat({
 
 	const groqFirst = resolvedGroq && (!resolvedOpenRouter || pickGroqFirst(resolvedGroq, resolvedOpenRouter));
 
-	if (groqFirst) {
-		const groqResult = await tryProvider("groq", resolvedGroq);
-		if (groqResult) return groqResult;
-		if (resolvedOpenRouter) {
+	try {
+		if (groqFirst) {
+			const groqResult = await tryProvider("groq", resolvedGroq);
+			if (groqResult) return groqResult;
+			if (resolvedOpenRouter) {
+				const orResult = await tryProvider("openrouter", resolvedOpenRouter);
+				if (orResult) return orResult;
+			}
+		} else if (resolvedOpenRouter) {
 			const orResult = await tryProvider("openrouter", resolvedOpenRouter);
 			if (orResult) return orResult;
-		}
-	} else if (resolvedOpenRouter) {
-		const orResult = await tryProvider("openrouter", resolvedOpenRouter);
-		if (orResult) return orResult;
-		if (resolvedGroq) {
+			if (resolvedGroq) {
+				const groqResult = await tryProvider("groq", resolvedGroq);
+				if (groqResult) return groqResult;
+			}
+		} else if (resolvedGroq) {
 			const groqResult = await tryProvider("groq", resolvedGroq);
 			if (groqResult) return groqResult;
 		}
-	} else if (resolvedGroq) {
-		const groqResult = await tryProvider("groq", resolvedGroq);
-		if (groqResult) return groqResult;
-	}
 
-	throw new Error(
-		`All AI providers failed: ${lastErrors
-			.map((e) => (e instanceof Error ? e.message : "unknown"))
-			.join("; ")}`
-	);
+		throw new Error(
+			`All AI providers failed: ${lastErrors
+				.map((e) => (e instanceof Error ? e.message : "unknown"))
+				.join("; ")}`
+		);
+	} finally {
+		clearTimeout(timeoutId);
+	}
 }
 
 export function detectKeyProvider(key: string): Provider | null {

@@ -70,9 +70,19 @@ export type TradeStatusType =
 	| "receiving_funds"
 	| "trade_settled";
 
+export interface TradeSettledData {
+	result?: 1 | 2 | 3;
+	tx_hash?: string;
+}
+
+export interface TradeStatusData {
+	trade_settled?: TradeSettledData;
+	[key: string]: unknown;
+}
+
 export type TradeStatusHandler = (
 	status: TradeStatusType,
-	data?: any
+	data?: TradeStatusData
 ) => void;
 
 type Listener = (data: any) => void;
@@ -89,14 +99,25 @@ class OmnistonClient {
 	private pingTimer: ReturnType<typeof setInterval> | null = null;
 	private connectPromise: Promise<void> | null = null;
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+	private isManualClose = false;
+	private reconnectAttempts = 0;
+	private readonly maxReconnectAttempts = 10;
 
 	constructor(url: string = OMNISTON_WS_URL) {
 		this.url = url;
 	}
 
 	connect(): Promise<void> {
-		if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-			return Promise.resolve();
+		if (this.ws) {
+			if (this.ws.readyState === WebSocket.OPEN) {
+				return Promise.resolve();
+			}
+			if (
+				this.ws.readyState === WebSocket.CONNECTING &&
+				this.connectPromise
+			) {
+				return this.connectPromise;
+			}
 		}
 		if (this.connectPromise) {
 			return this.connectPromise;
@@ -112,6 +133,7 @@ class OmnistonClient {
 			}
 
 			this.ws.onopen = () => {
+				this.reconnectAttempts = 0;
 				this.startPing();
 				this.connectPromise = null;
 				resolve();
@@ -126,13 +148,43 @@ class OmnistonClient {
 
 			this.ws.onclose = () => {
 				this.stopPing();
+
+				this.listeners.forEach((listenerSet) => {
+					listenerSet.forEach((listener) => {
+						try {
+							listener({
+								error:
+									"WebSocket disconnected — subscription lost",
+							});
+						} catch {
+							/* ignore */
+						}
+					});
+				});
 				this.listeners.clear();
 				this.rejectAllPending(
 					new Error("Omniston WebSocket closed")
 				);
+
+				if (this.isManualClose) return;
+				if (
+					this.reconnectAttempts >= this.maxReconnectAttempts
+				) {
+					console.warn(
+						"[Omniston] Max reconnect attempts reached"
+					);
+					return;
+				}
+
+				const delay = Math.min(
+					3000 * Math.pow(2, this.reconnectAttempts),
+					60000
+				);
+				this.reconnectAttempts++;
+
 				this.reconnectTimer = setTimeout(() => {
 					this.connect().catch(() => undefined);
-				}, 3000);
+				}, delay);
 			};
 
 			this.ws.onmessage = (event) => {
@@ -148,6 +200,7 @@ class OmnistonClient {
 	}
 
 	close() {
+		this.isManualClose = true;
 		if (this.reconnectTimer) {
 			clearTimeout(this.reconnectTimer);
 			this.reconnectTimer = null;
@@ -159,6 +212,7 @@ class OmnistonClient {
 			this.ws = null;
 		}
 		this.rejectAllPending(new Error("Omniston client closed"));
+		this.isManualClose = false;
 	}
 
 	private startPing() {
@@ -169,7 +223,6 @@ class OmnistonClient {
 					this.ws.send(
 						JSON.stringify({
 							jsonrpc: "2.0",
-							id: 0,
 							method: "ping",
 						})
 					);
@@ -193,22 +246,24 @@ class OmnistonClient {
 	}
 
 	private handleMessage(msg: any) {
+		if (msg.method === "pong" || msg.method === "ping") {
+			return;
+		}
+
 		if (
 			typeof msg.id === "number" &&
-			msg.id !== 0 &&
 			this.pendingRpcs.has(msg.id)
 		) {
 			const { resolve, reject } = this.pendingRpcs.get(msg.id)!;
 			this.pendingRpcs.delete(msg.id);
 			if (msg.error) {
-				reject(
-					new Error(
-						(typeof msg.error === "string"
-							? msg.error
-							: msg.error.message ||
-							  JSON.stringify(msg.error)) as string
-					)
-				);
+				const errorMsg =
+					typeof msg.error === "string"
+						? msg.error
+						: typeof msg.error?.message === "string"
+							? msg.error.message
+							: `RPC error: ${JSON.stringify(msg.error)}`;
+				reject(new Error(errorMsg));
 			} else {
 				resolve(msg.result);
 			}
@@ -216,7 +271,12 @@ class OmnistonClient {
 		}
 
 		if (msg.method === "event" || msg.method === "status") {
-			const subId = String(msg.params?.subscription ?? "");
+			const rawSub = msg.params?.subscription;
+			const subId =
+				typeof rawSub === "string" || typeof rawSub === "number"
+					? String(rawSub)
+					: "";
+			if (!subId) return;
 			const listeners = this.listeners.get(subId);
 			if (listeners) {
 				listeners.forEach((l) => {
@@ -234,7 +294,13 @@ class OmnistonClient {
 		if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
 			throw new Error("Omniston WebSocket is not open");
 		}
-		this.ws.send(JSON.stringify(payload));
+		try {
+			this.ws.send(JSON.stringify(payload));
+		} catch (e) {
+			throw new Error(
+				`Omniston send failed: ${(e as Error).message}`
+			);
+		}
 	}
 
 	async requestQuote(args: {
@@ -246,9 +312,16 @@ class OmnistonClient {
 		timeoutMs?: number;
 	}): Promise<Quote | null> {
 		const timeoutMs = args.timeoutMs ?? 15000;
-		await this.connect();
+		try {
+			await this.connect();
+		} catch (e) {
+			console.warn("[Omniston] connect failed:", e);
+			return null;
+		}
 
 		const id = ++this.rpcId;
+		if (this.rpcId > 999999) this.rpcId = 1;
+
 		const params = {
 			bid_asset_address: {
 				blockchain: TON_CHAIN_ID,
@@ -281,25 +354,19 @@ class OmnistonClient {
 
 		return new Promise<Quote | null>((resolve) => {
 			let resolved = false;
-			let lastDebug: any = null;
 			let handler: ((event: MessageEvent) => void) | null = null;
 
 			const finish = (q: Quote | null) => {
 				if (resolved) return;
 				resolved = true;
 				clearTimeout(timer);
-				const ws = this.ws;
-				if (ws && handler) {
-					ws.removeEventListener("message", handler);
+				if (this.ws && handler) {
+					this.ws.removeEventListener("message", handler);
 				}
 				if (!q) {
 					console.warn(
 						"[Omniston] no quote received",
-						{
-							id,
-							lastDebug,
-							wsState: this.ws?.readyState,
-						}
+						{ id, wsState: this.ws?.readyState }
 					);
 				}
 				resolve(q);
@@ -314,34 +381,37 @@ class OmnistonClient {
 				}
 
 				if (data?.id === id) {
-					lastDebug = { type: "rpc-response", data };
 					if (data.error) {
-						console.error("[Omniston] quote RPC error", data.error);
+						console.error(
+							"[Omniston] quote RPC error",
+							data.error
+						);
 						finish(null);
 						return;
 					}
 					const quote =
-						extractQuote(data.result) || extractQuote(data);
+						extractQuote(data.result) ||
+						extractQuote(data);
 					if (quote) {
 						finish(quote);
 					}
 					return;
 				}
 
-				if (data?.method === "event" || data?.method === "status") {
+				if (
+					data?.method === "event" ||
+					data?.method === "status"
+				) {
 					const quote =
 						extractQuote(data?.params?.result) ||
 						extractQuote(data);
 					if (quote) {
 						finish(quote);
-					} else {
-						lastDebug = { type: "event-no-quote", data };
 					}
 				}
 			};
 
 			const timer = setTimeout(() => {
-				this.pendingRpcs.delete(id);
 				finish(null);
 			}, timeoutMs);
 
@@ -360,6 +430,20 @@ class OmnistonClient {
 				finish(null);
 			}
 		});
+	}
+
+	private isValidTransferMessage(
+		m: unknown
+	): m is TransferMessage {
+		if (!m || typeof m !== "object") return false;
+		const msg = m as Record<string, unknown>;
+		return (
+			typeof msg.target_address === "string" &&
+			msg.target_address.length > 0 &&
+			typeof msg.send_amount === "string" &&
+			/^\d+$/.test(msg.send_amount) &&
+			typeof msg.payload === "string"
+		);
 	}
 
 	async buildTransfer(
@@ -391,7 +475,17 @@ class OmnistonClient {
 		if (!Array.isArray(messages) || messages.length === 0) {
 			throw new Error("Omniston did not return any transfer messages");
 		}
-		return messages as TransferMessage[];
+
+		const validated = messages.filter(
+			(m) => this.isValidTransferMessage(m)
+		);
+		if (validated.length !== messages.length) {
+			throw new Error(
+				`Omniston returned ${messages.length - validated.length} invalid transfer message(s)`
+			);
+		}
+
+		return validated;
 	}
 
 	async trackTrade(args: {
@@ -410,7 +504,11 @@ class OmnistonClient {
 			outgoing_tx_hash: args.outgoingTxHash,
 		});
 
-		const subId = String(result?.subscription ?? "");
+		const rawSub = result?.subscription;
+		const subId =
+			typeof rawSub === "string" || typeof rawSub === "number"
+				? String(rawSub)
+				: "";
 		if (!subId) {
 			throw new Error("No subscription returned from trade.track");
 		}
@@ -452,60 +550,100 @@ class OmnistonClient {
 		this.listeners.get(subId)!.add(handler);
 
 		return () => {
-			this.listeners.get(subId)?.delete(handler);
+			const set = this.listeners.get(subId);
+			if (set) {
+				set.delete(handler);
+				if (set.size === 0) {
+					this.listeners.delete(subId);
+				}
+			}
 		};
 	}
 
-	private rpc(method: string, params: any, timeoutMs = 30000): Promise<any> {
-		return new Promise(async (resolve, reject) => {
-			try {
-				await this.connect();
-			} catch (e) {
-				reject(e);
-				return;
-			}
+	private async rpc(
+		method: string,
+		params: object,
+		timeoutMs = 30000
+	): Promise<any> {
+		await this.connect();
 
-			const id = ++this.rpcId;
+		const id = ++this.rpcId;
+		if (this.rpcId > 999999) this.rpcId = 1;
+
+		let timeoutHandle: ReturnType<typeof setTimeout>;
+
+		const result = await new Promise<any>((resolve, reject) => {
 			this.pendingRpcs.set(id, { resolve, reject });
-			try {
-				this.sendRaw({ jsonrpc: "2.0", id, method, params });
-			} catch (e) {
-				this.pendingRpcs.delete(id);
-				reject(e);
-				return;
-			}
 
-			setTimeout(() => {
+			timeoutHandle = setTimeout(() => {
 				if (this.pendingRpcs.has(id)) {
 					this.pendingRpcs.delete(id);
-					reject(new Error(`Omniston RPC ${method} timed out`));
+					reject(
+						new Error(
+							`Omniston RPC "${method}" timed out after ${timeoutMs}ms`
+						)
+					);
 				}
 			}, timeoutMs);
+
+			try {
+				this.sendRaw({
+					jsonrpc: "2.0",
+					id,
+					method,
+					params,
+				});
+			} catch (e) {
+				clearTimeout(timeoutHandle);
+				this.pendingRpcs.delete(id);
+				reject(e);
+			}
 		});
+
+		clearTimeout(timeoutHandle!);
+		return result;
 	}
 }
 
-function extractQuote(data: any): Quote | null {
-	if (!data || typeof data !== "object") return null;
+function extractQuote(
+	data: unknown,
+	depth = 0
+): Quote | null {
+	const MAX_DEPTH = 10;
 
+	if (!data || typeof data !== "object") return null;
+	if (depth > MAX_DEPTH) return null;
+	if (Array.isArray(data)) return null;
+
+	const q = data as Record<string, unknown>;
 	if (
-		data.quote_id &&
-		data.bid_units &&
-		data.ask_units &&
-		data.params?.swap
+		q.quote_id &&
+		q.bid_units &&
+		q.ask_units &&
+		q.params &&
+		typeof q.params === "object" &&
+		(q.params as Record<string, unknown>)?.swap
 	) {
 		return data as Quote;
 	}
 
-	for (const key of Object.keys(data)) {
-		const value = (data as any)[key];
-		if (value && typeof value === "object") {
-			const found = extractQuote(value);
+	for (const key of Object.keys(q)) {
+		const value = q[key];
+		if (value && typeof value === "object" && !Array.isArray(value)) {
+			const found = extractQuote(value, depth + 1);
 			if (found) return found;
 		}
 	}
 
 	return null;
+}
+
+export function createOmnistonClient(
+	mode: "mainnet" | "testnet" | "devnet" = "mainnet"
+): OmnistonClient {
+	const url =
+		mode === "mainnet" ? OMNISTON_WS_URL : OMNISTON_WS_URL_SANDBOX;
+	return new OmnistonClient(url);
 }
 
 export const omniston = new OmnistonClient();

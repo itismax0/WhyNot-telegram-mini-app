@@ -7,6 +7,8 @@ import React, {
 	useMemo,
 	useRef,
 } from "react";
+import type { WalletSet } from "../services/blockchain";
+import { ASSETS, clearWalletSecrets } from "../services/blockchain";
 
 type ViewState =
 	| "loading"
@@ -36,49 +38,60 @@ type ViewState =
 type NetworkMode = "mainnet" | "testnet" | "devnet";
 type Language = "en" | "ru";
 type Currency = "usd" | "eur" | "rub";
+type WalletMode = "real" | "decoy";
+
+export const getWebApp = () => window.Telegram?.WebApp;
+
+const isCloudSupported = (): boolean => {
+	const app = getWebApp();
+	return Boolean(
+		app &&
+			typeof app.isVersionAtLeast === "function" &&
+			app.isVersionAtLeast("6.3")
+	);
+};
 
 export const getCloudItem = (key: string): Promise<string | null> => {
 	return new Promise((resolve) => {
-		if (!isCloudSupported() || !webApp?.CloudStorage) {
+		const app = getWebApp();
+		if (!isCloudSupported() || !app?.CloudStorage) {
 			resolve(localStorage.getItem(key));
 			return;
 		}
 		const timeout = setTimeout(() => {
-			console.warn(`[CloudStorage] getItem("${key}") timeout, falling back to localStorage`);
+			if (import.meta.env.DEV) {
+				console.warn(`[CloudStorage] getItem("${key}") timeout, falling back to localStorage`);
+			} else {
+				console.warn("[CloudStorage] getItem timeout");
+			}
 			resolve(localStorage.getItem(key));
 		}, 5000);
-		webApp.CloudStorage.getItem(key, (err: any, value: string) => {
+		app.CloudStorage.getItem(key, (err: any, value: string) => {
 			clearTimeout(timeout);
 			if (err) {
-				console.warn(`[CloudStorage] getItem("${key}") error:`, err);
-				resolve(localStorage.getItem(key));
-			} else if (!value) {
+				if (import.meta.env.DEV) {
+					console.warn(`[CloudStorage] getItem("${key}") error:`, err);
+				}
 				resolve(localStorage.getItem(key));
 			} else {
-				resolve(value);
+				resolve(value ?? localStorage.getItem(key));
 			}
 		});
 	});
 };
 
-const webApp = window.Telegram?.WebApp;
-const isCloudSupported = (): boolean => {
-	return (
-		webApp &&
-		typeof webApp.isVersionAtLeast === "function" &&
-		webApp.isVersionAtLeast("6.3")
-	);
-};
-
 export const setCloudItem = (key: string, value: string): Promise<void> => {
 	return new Promise((resolve) => {
+		const app = getWebApp();
 		localStorage.setItem(key, value);
-		if (!isCloudSupported() || !webApp?.CloudStorage) {
+		if (!isCloudSupported() || !app?.CloudStorage) {
 			resolve();
 			return;
 		}
 		const timeout = setTimeout(() => {
-			console.warn(`[CloudStorage] setItem("${key}") timeout`);
+			if (import.meta.env.DEV) {
+				console.warn(`[CloudStorage] setItem("${key}") timeout`);
+			}
 			try {
 				localStorage.setItem("cloud_unverified", "1");
 			} catch {
@@ -86,10 +99,12 @@ export const setCloudItem = (key: string, value: string): Promise<void> => {
 			}
 			resolve();
 		}, 5000);
-		webApp.CloudStorage.setItem(key, value, (err: any) => {
+		app.CloudStorage.setItem(key, value, (err: any) => {
 			clearTimeout(timeout);
 			if (err) {
-				console.warn(`[CloudStorage] setItem("${key}") error:`, err);
+				if (import.meta.env.DEV) {
+					console.warn(`[CloudStorage] setItem("${key}") error:`, err);
+				}
 				try {
 					localStorage.setItem("cloud_unverified", "1");
 				} catch {
@@ -103,23 +118,228 @@ export const setCloudItem = (key: string, value: string): Promise<void> => {
 
 export const removeCloudItem = (key: string): Promise<void> => {
 	return new Promise((resolve) => {
+		const app = getWebApp();
 		localStorage.removeItem(key);
-		if (!isCloudSupported() || !webApp?.CloudStorage) {
+		if (!isCloudSupported() || !app?.CloudStorage) {
 			resolve();
 			return;
 		}
 		const timeout = setTimeout(() => {
-			console.warn(`[CloudStorage] removeItem("${key}") timeout`);
+			if (import.meta.env.DEV) {
+				console.warn(`[CloudStorage] removeItem("${key}") timeout`);
+			}
 			resolve();
 		}, 5000);
-		webApp.CloudStorage.removeItem(key, (err: any) => {
+		app.CloudStorage.removeItem(key, (err: any) => {
 			clearTimeout(timeout);
 			if (err) {
-				console.warn(`[CloudStorage] removeItem("${key}") error:`, err);
+				if (import.meta.env.DEV) {
+					console.warn(`[CloudStorage] removeItem("${key}") error:`, err);
+				}
 			}
 			resolve();
 		});
 	});
+};
+
+const WALLET_DATA_KEY = "wallet_data";
+const WALLET_DEVICE_SECRET_KEY = "wallet_device_secret";
+const STORAGE_TIMEOUT_MS = 5000;
+
+const isSecureStorageSupported = (): boolean => {
+	const app = getWebApp();
+	return Boolean(
+		app?.SecureStorage &&
+			typeof app.isVersionAtLeast === "function" &&
+			app.isVersionAtLeast("9.0")
+	);
+};
+
+const getSecureItem = (key: string): Promise<string | null> =>
+	new Promise((resolve, reject) => {
+		const storage = getWebApp()?.SecureStorage;
+		if (!storage) {
+			reject(new Error("Telegram SecureStorage is unavailable"));
+			return;
+		}
+
+		let settled = false;
+		const timeout = setTimeout(() => {
+			if (!settled) {
+				settled = true;
+				reject(new Error("Telegram SecureStorage read timed out"));
+			}
+		}, STORAGE_TIMEOUT_MS);
+
+		storage.getItem(key, (error, value) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timeout);
+			if (error) {
+				reject(new Error(`Telegram SecureStorage read failed: ${String(error)}`));
+				return;
+			}
+			resolve(value ?? null);
+		});
+	});
+
+const setSecureItem = (key: string, value: string): Promise<void> =>
+	new Promise((resolve, reject) => {
+		const storage = getWebApp()?.SecureStorage;
+		if (!storage) {
+			reject(new Error("Telegram SecureStorage is unavailable"));
+			return;
+		}
+
+		let settled = false;
+		const timeout = setTimeout(() => {
+			if (!settled) {
+				settled = true;
+				reject(new Error("Telegram SecureStorage write timed out"));
+			}
+		}, STORAGE_TIMEOUT_MS);
+
+		storage.setItem(key, value, (error, stored) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timeout);
+			if (error || stored === false) {
+				reject(
+					new Error(
+						`Telegram SecureStorage write failed: ${String(error ?? "not stored")}`
+					)
+				);
+				return;
+			}
+			resolve();
+		});
+	});
+
+const removeSecureItem = (key: string): Promise<void> =>
+	new Promise((resolve, reject) => {
+		const storage = getWebApp()?.SecureStorage;
+		if (!storage) {
+			resolve();
+			return;
+		}
+
+		let settled = false;
+		const timeout = setTimeout(() => {
+			if (!settled) {
+				settled = true;
+				reject(new Error("Telegram SecureStorage removal timed out"));
+			}
+		}, STORAGE_TIMEOUT_MS);
+
+		storage.removeItem(key, (error) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timeout);
+			if (error) {
+				reject(
+					new Error(`Telegram SecureStorage removal failed: ${String(error)}`)
+				);
+				return;
+			}
+			resolve();
+		});
+	});
+
+const getCloudItemOnly = (key: string): Promise<string | null> =>
+	new Promise((resolve) => {
+		const app = getWebApp();
+		if (!isCloudSupported() || !app?.CloudStorage) {
+			resolve(null);
+			return;
+		}
+		const timeout = setTimeout(() => resolve(null), STORAGE_TIMEOUT_MS);
+		app.CloudStorage.getItem(key, (error, value) => {
+			clearTimeout(timeout);
+			resolve(error ? null : value || null);
+		});
+	});
+
+const setCloudItemOnly = (key: string, value: string): Promise<void> =>
+	new Promise((resolve, reject) => {
+		const app = getWebApp();
+		if (!isCloudSupported() || !app?.CloudStorage) {
+			reject(new Error("Telegram CloudStorage is unavailable"));
+			return;
+		}
+		const timeout = setTimeout(
+			() => reject(new Error("Telegram CloudStorage write timed out")),
+			STORAGE_TIMEOUT_MS
+		);
+		app.CloudStorage.setItem(key, value, (error) => {
+			clearTimeout(timeout);
+			if (error) {
+				reject(new Error(`Telegram CloudStorage write failed: ${String(error)}`));
+				return;
+			}
+			resolve();
+		});
+	});
+
+export const getWalletData = async (): Promise<string | null> => {
+	if (isSecureStorageSupported()) {
+		const secureValue = await getSecureItem(WALLET_DATA_KEY);
+		if (secureValue) return secureValue;
+	}
+
+	const cloudValue = await getCloudItemOnly(WALLET_DATA_KEY);
+	if (cloudValue) return cloudValue;
+
+	// Read the old browser copy once so existing wallets can migrate safely.
+	const legacyValue = localStorage.getItem(WALLET_DATA_KEY);
+	if (!legacyValue) return null;
+	return legacyValue;
+};
+
+export const setWalletData = async (value: string): Promise<void> => {
+	if (isSecureStorageSupported()) {
+		await setSecureItem(WALLET_DATA_KEY, value);
+		await removeCloudItem(WALLET_DATA_KEY);
+		localStorage.removeItem(WALLET_DATA_KEY);
+		return;
+	}
+
+	if (isCloudSupported()) {
+		await setCloudItemOnly(WALLET_DATA_KEY, value);
+		localStorage.removeItem(WALLET_DATA_KEY);
+		return;
+	}
+
+	// Development/browser fallback where Telegram storage does not exist.
+	localStorage.setItem(WALLET_DATA_KEY, value);
+};
+
+export const removeWalletData = async (): Promise<void> => {
+	const removals: Promise<void>[] = [removeCloudItem(WALLET_DATA_KEY)];
+	if (isSecureStorageSupported()) {
+		removals.push(
+			removeSecureItem(WALLET_DATA_KEY),
+			removeSecureItem(WALLET_DEVICE_SECRET_KEY)
+		);
+	}
+	await Promise.all(removals);
+	localStorage.removeItem(WALLET_DATA_KEY);
+};
+
+export const getWalletDeviceSecret = async (
+	createIfMissing = false
+): Promise<string | null> => {
+	if (!isSecureStorageSupported()) return null;
+
+	const existing = await getSecureItem(WALLET_DEVICE_SECRET_KEY);
+	if (existing || !createIfMissing) return existing;
+
+	const bytes = window.crypto.getRandomValues(new Uint8Array(32));
+	let binary = "";
+	for (const byte of bytes) binary += String.fromCharCode(byte);
+	const secret = btoa(binary);
+	bytes.fill(0);
+	await setSecureItem(WALLET_DEVICE_SECRET_KEY, secret);
+	return secret;
 };
 
 export const translations: Record<Language, Record<string, string>> = {
@@ -186,7 +406,18 @@ export const translations: Record<Language, Record<string, string>> = {
 		biometric_faceid: "Face ID",
 		biometric_fingerprint: "Touch ID",
 		enable_biometric: "Enable Biometrics",
+		biometric_setup_title: "Secure your wallet",
+		biometric_setup_desc: "Use {{type}} for quick access and secure transaction confirmation.",
+		btn_enable: "ENABLE {{type}}",
+		btn_skip: "SKIP",
 		ecosystem: "Ecosystem",
+		pin_create: "Create PIN",
+		pin_repeat: "Repeat PIN",
+		pin_confirm_seed: "Enter PIN to View Seed",
+		pin_confirm_bio: "Enter PIN to Enable Biometrics",
+		pin_enter: "Enter PIN",
+		pin_too_simple: "PIN is too simple. Please choose another.",
+		enter_pin: "Enter PIN",
 	},
 	ru: {
 		welcome_desc:
@@ -257,109 +488,196 @@ export const translations: Record<Language, Record<string, string>> = {
 		btn_enable: "ВКЛЮЧИТЬ {{type}}",
 		btn_skip: "ПРОПУСТИТЬ",
 		ecosystem: "Экосистема",
+		pin_create: "Создать PIN",
+		pin_repeat: "Повторить PIN",
+		pin_confirm_seed: "Введите PIN для просмотра",
+		pin_confirm_bio: "Введите PIN для биометрии",
+		pin_enter: "Введите PIN",
+		pin_too_simple: "Слишком простой PIN. Выберите другой.",
+		enter_pin: "Введите PIN",
 	},
 };
 
-interface WalletContextType {
+interface WalletDataContextType {
 	view: ViewState;
-	setView: (v: ViewState) => void;
-	wallets: any;
-	setWallets: (w: any) => void;
+	wallets: WalletSet | null;
 	balances: Record<string, number>;
-	setBalances: (b: Record<string, number>) => void;
 	rates: Record<string, number>;
-	setRates: (r: Record<string, number>) => void;
 	changes: Record<string, number>;
-	setChanges: (c: Record<string, number>) => void;
-	mnemonic: string[];
-	setMnemonic: (m: string[]) => void;
 	toast: string | null;
-	showToast: (msg: string) => void;
 	networkMode: NetworkMode;
-	setNetworkMode: (m: NetworkMode) => void;
 	language: Language;
-	setLanguage: (l: Language) => void;
 	baseCurrency: Currency;
-	setBaseCurrency: (c: Currency) => void;
-	t: (key: string) => string;
 	tempPin: string;
-	setTempPin: (pin: string) => void;
 	seedRevealed: boolean;
-	setSeedRevealed: (v: boolean) => void;
-	selectedAsset: any;
-	setSelectedAsset: (a: any) => void;
+	selectedAsset: (typeof ASSETS)[number] | null;
 	groqKey: string | null;
-	setGroqKey: (k: string | null) => void;
 	openrouterKey: string | null;
-	setOpenrouterKey: (k: string | null) => void;
 	biometricEnabled: boolean;
-	setBiometricEnabled: (v: boolean) => void;
 	biometricAvailable: boolean;
 	biometricType: "faceid" | "fingerprint" | "biometrics" | null;
+	revealedSeed: string | null;
+	walletMode: WalletMode;
+	t: (key: string, params?: Record<string, string>) => string;
 }
 
-type WalletDataContextType = Omit<WalletContextType, "setView" | "setWallets" | "setBalances" | "setRates" | "setChanges" | "setMnemonic" | "showToast" | "setNetworkMode" | "setLanguage" | "setBaseCurrency" | "setTempPin" | "setSeedRevealed" | "setSelectedAsset" | "setGroqKey" | "setOpenrouterKey" | "setBiometricEnabled">;
-type WalletActionsContextType = Pick<WalletContextType, "setView" | "setWallets" | "setBalances" | "setRates" | "setChanges" | "setMnemonic" | "showToast" | "setNetworkMode" | "setLanguage" | "setBaseCurrency" | "setTempPin" | "setSeedRevealed" | "setSelectedAsset" | "setGroqKey" | "setOpenrouterKey" | "setBiometricEnabled">;
+interface WalletActionsContextType {
+	setView: (v: ViewState) => void;
+	setWallets: (w: WalletSet | null) => void;
+	setBalances: (b: Record<string, number>) => void;
+	setRates: (r: Record<string, number>) => void;
+	setChanges: (c: Record<string, number>) => void;
+	showToast: (msg: string) => void;
+	setNetworkMode: (m: NetworkMode) => void;
+	setLanguage: (l: Language) => void;
+	setBaseCurrency: (c: Currency) => void;
+	setTempPin: (pin: string) => void;
+	setSeedRevealed: (v: boolean) => void;
+	setSelectedAsset: (a: (typeof ASSETS)[number] | null) => void;
+	setGroqKey: (k: string | null) => void;
+	setOpenrouterKey: (k: string | null) => void;
+	setBiometricEnabled: (v: boolean) => void;
+	setRevealedSeed: (seed: string | null) => void;
+	setWalletMode: (mode: WalletMode) => void;
+	lockWallet: () => void;
+}
 
-const WalletDataContext = createContext<WalletDataContextType>({} as WalletDataContextType);
-const WalletActionsContext = createContext<WalletActionsContextType>({} as WalletActionsContextType);
+const WalletDataContext = createContext<WalletDataContextType | null>(null);
+const WalletActionsContext = createContext<WalletActionsContextType | null>(null);
+
+WalletDataContext.displayName = "WalletDataContext";
+WalletActionsContext.displayName = "WalletActionsContext";
 
 export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 	const [view, setViewState] = useState<ViewState>("loading");
-	const [wallets, setWallets] = useState<any>(null);
+	const [wallets, setWallets] = useState<WalletSet | null>(null);
 	const [balances, setBalances] = useState<Record<string, number>>({});
 	const [rates, setRates] = useState<Record<string, number>>({});
 	const [changes, setChanges] = useState<Record<string, number>>({});
-	const mnemonicRef = useRef<string[]>([]);
-	const [mnemonic, setMnemonicState] = useState(0);
-	const setMnemonic = useCallback((m: string[]) => {
-		mnemonicRef.current = m;
-		setMnemonicState((n) => n + 1);
-	}, []);
 	const [toast, setToast] = useState<string | null>(null);
+	const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
 	const [networkMode, setNetworkModeState] = useState<NetworkMode>("mainnet");
 	const [language, setLanguageState] = useState<Language>("en");
 	const [baseCurrency, setBaseCurrencyState] = useState<Currency>("usd");
-	const [tempPin, setTempPin] = useState<string>("");
-	const [seedRevealed, setSeedRevealed] = useState<boolean>(false);
-	const [selectedAsset, setSelectedAsset] = useState<any>(null);
+	const [tempPinState, setTempPinState] = useState<string>("");
+	const setTempPin = useCallback((pin: string) => {
+		if (pin !== "" && !/^\d{1,6}$/.test(pin)) {
+			if (import.meta.env.DEV) {
+				console.warn("[WalletContext] Invalid tempPin format rejected");
+			}
+			return;
+		}
+		setTempPinState(pin);
+	}, []);
+	const [seedRevealedState, setSeedRevealedState] = useState<boolean>(false);
+	const setSeedRevealed = useCallback((v: boolean) => {
+		setSeedRevealedState(v);
+	}, []);
+	const [selectedAssetState, setSelectedAssetState] = useState<
+		(typeof ASSETS)[number] | null
+	>(null);
+	const setSelectedAsset = useCallback(
+		(a: (typeof ASSETS)[number] | null) => {
+			setSelectedAssetState(a);
+		},
+		[]
+	);
 	const [groqKey, setGroqKeyState] = useState<string | null>(null);
-	const [openrouterKey, setOpenrouterKeyState] = useState<string | null>(null);
-	const [biometricEnabled, setBiometricEnabledState] = useState<boolean>(false);
-	const [biometricAvailable, setBiometricAvailable] = useState<boolean>(false);
-	const [biometricType, setBiometricType] = useState<"faceid" | "fingerprint" | "biometrics" | null>(null);
+	const [openrouterKey, setOpenrouterKeyState] = useState<string | null>(
+		null
+	);
+	const [biometricEnabled, setBiometricEnabledState] =
+		useState<boolean>(false);
+	const [biometricAvailable, setBiometricAvailable] =
+		useState<boolean>(false);
+	const [biometricType, setBiometricType] = useState<
+		"faceid" | "fingerprint" | "biometrics" | null
+	>(null);
+	const [revealedSeed, setRevealedSeed] = useState<string | null>(null);
+	const [walletMode, setWalletModeState] = useState<WalletMode>("real");
+	const bioInitializedRef = useRef(false);
 
 	useEffect(() => {
-		const savedLang = localStorage.getItem("wallet_lang") as Language;
-		if (savedLang) setLanguageState(savedLang);
-		const savedNet = localStorage.getItem("wallet_net") as NetworkMode;
-		if (savedNet) setNetworkModeState(savedNet);
-		const savedCurrency = localStorage.getItem("wallet_currency") as Currency;
-		if (savedCurrency === "usd" || savedCurrency === "eur" || savedCurrency === "rub") {
+		let mounted = true;
+
+		const VALID_LANGUAGES: Language[] = ["en", "ru"];
+		const VALID_NETWORKS: NetworkMode[] = ["mainnet", "testnet", "devnet"];
+
+		const savedLang = localStorage.getItem("wallet_lang");
+		if (savedLang && (VALID_LANGUAGES as string[]).includes(savedLang)) {
+			setLanguageState(savedLang as Language);
+		}
+
+		const savedNet = localStorage.getItem("wallet_net");
+		if (savedNet && (VALID_NETWORKS as string[]).includes(savedNet)) {
+			setNetworkModeState(savedNet as NetworkMode);
+		}
+
+		const savedCurrency = localStorage.getItem(
+			"wallet_currency"
+		) as Currency;
+		if (
+			savedCurrency === "usd" ||
+			savedCurrency === "eur" ||
+			savedCurrency === "rub"
+		) {
 			setBaseCurrencyState(savedCurrency);
 		}
-		const savedGroq = localStorage.getItem("whynot_groq_key");
+
+		const savedGroq = sessionStorage.getItem("whynot_groq_key");
 		if (savedGroq) setGroqKeyState(savedGroq);
-		const savedOr = localStorage.getItem("whynot_openrouter_key");
+
+		const savedOr = sessionStorage.getItem("whynot_openrouter_key");
 		if (savedOr) setOpenrouterKeyState(savedOr);
+
+		const groqKeySet = localStorage.getItem("whynot_groq_key_set") === "1";
+		if (groqKeySet && !savedGroq) {
+			localStorage.setItem("whynot_groq_needs_reentry", "1");
+		}
+		const orKeySet = localStorage.getItem("whynot_openrouter_key_set") === "1";
+		if (orKeySet && !savedOr) {
+			localStorage.setItem("whynot_openrouter_needs_reentry", "1");
+		}
+
 		const savedBio = localStorage.getItem("wallet_biometric") === "true";
 		setBiometricEnabledState(savedBio);
 
 		// Initialize BiometricManager
-		if (webApp?.BiometricManager) {
-			webApp.BiometricManager.init(() => {
-				setBiometricAvailable(webApp.BiometricManager.isInited && webApp.BiometricManager.isBiometricAvailable);
-				
-				const platform = webApp.platform;
+		const app = getWebApp();
+		if (app?.BiometricManager && !bioInitializedRef.current) {
+			bioInitializedRef.current = true;
+			app.BiometricManager.init(() => {
+				if (!mounted) return;
+				const isAvailable =
+					app.BiometricManager.isInited === true &&
+					app.BiometricManager.isBiometricAvailable === true;
+
+				setBiometricAvailable(isAvailable);
+
+				if (!isAvailable) {
+					setBiometricType(null);
+					return;
+				}
+
+				const platform = app.platform ?? "";
 				if (platform === "ios") {
 					setBiometricType("faceid");
 				} else if (platform === "android") {
 					setBiometricType("fingerprint");
 				} else {
-					setBiometricType("biometrics");
+					setBiometricType(null);
+					setBiometricAvailable(false);
 				}
 			});
 		}
+
+		return () => {
+			mounted = false;
+			if (toastTimerRef.current) {
+				clearTimeout(toastTimerRef.current);
+			}
+		};
 	}, []);
 
 	const setLanguage = useCallback((l: Language) => {
@@ -379,43 +697,94 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 
 	const setGroqKey = useCallback((k: string | null) => {
 		if (k && k.trim()) {
-			setGroqKeyState(k.trim());
-			localStorage.setItem("whynot_groq_key", k.trim());
+			const trimmed = k.trim();
+			setGroqKeyState(trimmed);
+			localStorage.setItem("whynot_groq_key_set", "1");
+			localStorage.removeItem("whynot_groq_needs_reentry");
+			sessionStorage.setItem("whynot_groq_key", trimmed);
 		} else {
 			setGroqKeyState(null);
-			localStorage.removeItem("whynot_groq_key");
+			localStorage.removeItem("whynot_groq_key_set");
+			localStorage.removeItem("whynot_groq_needs_reentry");
+			sessionStorage.removeItem("whynot_groq_key");
 		}
 	}, []);
 
 	const setOpenrouterKey = useCallback((k: string | null) => {
 		if (k && k.trim()) {
-			setOpenrouterKeyState(k.trim());
-			localStorage.setItem("whynot_openrouter_key", k.trim());
+			const trimmed = k.trim();
+			setOpenrouterKeyState(trimmed);
+			localStorage.setItem("whynot_openrouter_key_set", "1");
+			localStorage.removeItem("whynot_openrouter_needs_reentry");
+			sessionStorage.setItem("whynot_openrouter_key", trimmed);
 		} else {
 			setOpenrouterKeyState(null);
-			localStorage.removeItem("whynot_openrouter_key");
+			localStorage.removeItem("whynot_openrouter_key_set");
+			localStorage.removeItem("whynot_openrouter_needs_reentry");
+			sessionStorage.removeItem("whynot_openrouter_key");
 		}
 	}, []);
 
 	const setBiometricEnabled = useCallback((v: boolean) => {
 		setBiometricEnabledState(v);
-		localStorage.setItem("wallet_biometric", v ? "true" : "false");
+		if (v) {
+			localStorage.setItem("wallet_biometric", "true");
+		} else {
+			localStorage.removeItem("wallet_biometric");
+		}
 	}, []);
 
 	const showToast = useCallback((msg: string) => {
+		if (toastTimerRef.current) {
+			clearTimeout(toastTimerRef.current);
+			toastTimerRef.current = null;
+		}
 		setToast(msg);
-		setTimeout(() => setToast(null), 3000);
+		toastTimerRef.current = setTimeout(() => {
+			setToast(null);
+			toastTimerRef.current = null;
+		}, 3000);
 	}, []);
 
 	const t = useCallback(
-		(key: string) => {
-			return translations[language][key] || key;
+		(key: string, params?: Record<string, string>) => {
+			const dict = translations[language] ?? translations["en"];
+			let text = dict[key] || key;
+			if (params) {
+				Object.entries(params).forEach(([k, v]) => {
+					const placeholder = `{{${k}}}`;
+					text = text.split(placeholder).join(v);
+				});
+			}
+			return text;
 		},
 		[language]
 	);
 
 	const setView = useCallback((v: ViewState) => {
 		setViewState(v);
+		const pinViews: ViewState[] = [
+			"pin-create",
+			"pin-repeat",
+			"pin-enter",
+			"pin-confirm-seed",
+			"pin-confirm-biometric",
+		];
+		if (!pinViews.includes(v)) {
+			setTempPin("");
+		}
+	}, []);
+
+	const lockWallet = useCallback(() => {
+		setWallets((current) => {
+			clearWalletSecrets(current);
+			return null;
+		});
+		setWalletModeState("real");
+		setRevealedSeed(null);
+		setSeedRevealedState(false);
+		setTempPinState("");
+		setViewState("pin-enter");
 	}, []);
 
 	const dataValue = useMemo<WalletDataContextType>(
@@ -425,22 +794,44 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 			balances,
 			rates,
 			changes,
-			mnemonic: mnemonicRef.current,
 			toast,
 			networkMode,
 			language,
 			baseCurrency,
 			t,
-			tempPin,
-			seedRevealed,
-			selectedAsset,
+			tempPin: tempPinState,
+			seedRevealed: seedRevealedState,
+			selectedAsset: selectedAssetState,
 			groqKey,
 			openrouterKey,
 			biometricEnabled,
 			biometricAvailable,
 			biometricType,
+			revealedSeed,
+			walletMode,
 		}),
-		[view, wallets, balances, rates, changes, mnemonic, toast, networkMode, language, baseCurrency, t, tempPin, seedRevealed, selectedAsset, groqKey, openrouterKey, biometricEnabled, biometricAvailable, biometricType]
+		[
+			view,
+			wallets,
+			balances,
+			rates,
+			changes,
+			toast,
+			networkMode,
+			language,
+			baseCurrency,
+			t,
+			tempPinState,
+			seedRevealedState,
+			selectedAssetState,
+			groqKey,
+			openrouterKey,
+			biometricEnabled,
+			biometricAvailable,
+			biometricType,
+			revealedSeed,
+			walletMode,
+		]
 	);
 
 	const actionsValue = useMemo<WalletActionsContextType>(
@@ -450,7 +841,6 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 			setBalances,
 			setRates,
 			setChanges,
-			setMnemonic,
 			showToast,
 			setNetworkMode,
 			setLanguage,
@@ -461,10 +851,30 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 			setGroqKey,
 			setOpenrouterKey,
 			setBiometricEnabled,
+			setRevealedSeed,
+			setWalletMode: setWalletModeState,
+			lockWallet,
 		}),
-		[setView, setWallets, setBalances, setRates, setChanges, setMnemonic, showToast, setNetworkMode, setLanguage, setBaseCurrency, setTempPin, setSeedRevealed, setSelectedAsset, setGroqKey, setOpenrouterKey, setBiometricEnabled]
+		[
+			setView,
+			setWallets,
+			setBalances,
+			setRates,
+			setChanges,
+			showToast,
+			setNetworkMode,
+			setLanguage,
+			setBaseCurrency,
+			setTempPin,
+			setSeedRevealed,
+			setSelectedAsset,
+			setGroqKey,
+			setOpenrouterKey,
+			setBiometricEnabled,
+			setWalletModeState,
+			lockWallet,
+		]
 	);
-
 
 	return (
 		<WalletActionsContext.Provider value={actionsValue}>
@@ -478,5 +888,10 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 export const useWallet = () => {
 	const data = useContext(WalletDataContext);
 	const actions = useContext(WalletActionsContext);
+
+	if (!data || !actions) {
+		throw new Error("useWallet() must be used within <WalletProvider>");
+	}
+
 	return { ...data, ...actions };
 };

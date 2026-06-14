@@ -195,6 +195,7 @@ export const MainView = () => {
 		networkMode,
 		language,
 		baseCurrency,
+		walletMode,
 	} = useWallet();
 	const [hide, setHide] = useState(false);
 	const [performancePeriod, setPerformancePeriod] = useState<"24h" | "all">("24h");
@@ -207,6 +208,12 @@ export const MainView = () => {
 	const lastNetworkRef = useRef<string | null>(null);
 
 	useEffect(() => {
+		if (walletMode === "decoy") {
+			setWalletAssets([]);
+			setWalletAssetBalances({});
+			return;
+		}
+
 		if (!wallets?.ton?.address) {
 			setWalletAssets([]);
 			setWalletAssetBalances({});
@@ -287,7 +294,7 @@ export const MainView = () => {
 		return () => {
 			cancelled = true;
 		};
-	}, [wallets?.ton?.address, networkMode]);
+	}, [wallets?.ton?.address, networkMode, walletMode]);
 
 	const customAssetsUsd = walletAssets.reduce(
 		(total, asset) =>
@@ -1128,9 +1135,10 @@ export const SendView = () => {
 		showToast,
 		networkMode,
 		language,
-	rates,
-	t,
-	baseCurrency,
+		rates,
+		t,
+		baseCurrency,
+		walletMode,
 	} = useWallet();
 	const [asset, setAsset] = useState(ASSETS[0]);
 	const [address, setAddress] = useState("");
@@ -1197,6 +1205,15 @@ export const SendView = () => {
 
 	const handleSend = async () => {
 		setLoading(true);
+		if (walletMode === "decoy") {
+			showToast(
+				language === "ru"
+					? "Фейковый кошелёк открыт пустым"
+					: "Empty wallet mode is active"
+			);
+			setLoading(false);
+			return;
+		}
 		let targetAddress = address.trim();
 		const chain = getChainForAsset(asset.id);
 
@@ -1676,12 +1693,17 @@ export const SendView = () => {
 };
 
 export const HistoryView = () => {
-	const { setView, wallets, networkMode, t } = useWallet();
+	const { setView, wallets, networkMode, t, walletMode } = useWallet();
 	const [txs, setTxs] = useState<WalletTransaction[]>([]);
 	const [loading, setLoading] = useState(true);
 
 	useEffect(() => {
 		const loadHistory = async () => {
+			if (walletMode === "decoy") {
+				setTxs([]);
+				setLoading(false);
+				return;
+			}
 			setLoading(true);
 			const data = await fetchTransactions(
 				wallets?.ton?.address ?? '',
@@ -1691,7 +1713,7 @@ export const HistoryView = () => {
 			setLoading(false);
 		};
 		loadHistory();
-	}, [wallets, networkMode]);
+	}, [wallets, networkMode, walletMode]);
 
 	return (
 		<motion.div

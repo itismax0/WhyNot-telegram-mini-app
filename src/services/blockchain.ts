@@ -16,6 +16,40 @@ import { upsertUsername, getUsernameRegistry } from "./supabase";
 
 const TONCENTER_KEY = import.meta.env.VITE_TONCENTER_KEY ?? "";
 
+const TONCENTER_BASE = {
+	mainnet: "https://toncenter.com/api/v2",
+	testnet: "https://testnet.toncenter.com/api/v2",
+	devnet: "https://testnet.toncenter.com/api/v2",
+} as const;
+
+function toncenterFetch(
+	url: string,
+	params: Record<string, string> = {},
+	init: RequestInit = {}
+): Promise<Response> {
+	const searchParams = new URLSearchParams(params);
+	const headers = new Headers(init.headers);
+	if (TONCENTER_KEY) {
+		headers.set("X-API-Key", TONCENTER_KEY);
+	}
+	const fullUrl =
+		Object.keys(params).length > 0
+			? `${url}?${searchParams.toString()}`
+			: url;
+	return fetch(fullUrl, { ...init, headers });
+}
+
+function withTimeout<T>(
+	promise: Promise<T>,
+	ms: number,
+	fallback: T
+): Promise<T> {
+	return Promise.race([
+		promise,
+		new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+	]);
+}
+
 export interface WalletSet {
 	ton: {
 		address: string;
@@ -30,6 +64,14 @@ export interface WalletSet {
 		address: string;
 		keypair: import("@solana/web3.js").Keypair;
 	};
+}
+
+export function clearWalletSecrets(wallets: WalletSet | null): void {
+	if (!wallets) return;
+	wallets.ton.keyPair.secretKey.fill(0);
+	wallets.sol.keypair.secretKey.fill(0);
+	// ethers stores its private key as an immutable JS string, which cannot be
+	// overwritten reliably. Dropping all references is the best available action.
 }
 
 export interface UsernameRegistry {
@@ -202,25 +244,46 @@ export async function fetchBalances(
 ): Promise<Record<string, number>> {
 	const providers = getProviders(mode);
 	try {
-		const tonEndpoint =
-			mode === "mainnet"
-				? "https://toncenter.com/api/v2/getAddressInformation"
-				: "https://testnet.toncenter.com/api/v2/getAddressInformation";
-
 		const [tonBalance, ethWei, solLamports] = await Promise.all([
-			fetch(`${tonEndpoint}?address=${wallets.ton.address}&api_key=${TONCENTER_KEY}`)
-				.then((r) => r.json())
-				.then(
-					(data) =>
+			withTimeout(
+				toncenterFetch(
+					`${TONCENTER_BASE[mode]}/getAddressInformation`,
+					{ address: wallets.ton.address }
+				)
+					.then((r) => r.json())
+					.then((data) =>
 						data.ok && data.result
 							? Number(data.result.balance) / 1e9
 							: 0
-				)
-				.catch(() => 0),
-			providers.eth.getBalance(wallets.eth.address).catch(() => 0n),
-			providers.sol
-				.getBalance(wallets.sol.keypair.publicKey)
-				.catch(() => 0),
+					)
+					.catch(() => 0),
+				8000,
+				0
+			),
+			withTimeout(
+				providers.eth.getBalance(wallets.eth.address).catch((e) => {
+					console.error(
+						"[fetchBalances] ETH balance fetch failed:",
+						e?.message ?? e
+					);
+					return 0n;
+				}),
+				8000,
+				0n
+			),
+			withTimeout(
+				providers.sol
+					.getBalance(wallets.sol.keypair.publicKey)
+					.catch((e) => {
+						console.error(
+							"[fetchBalances] SOL balance fetch failed:",
+							e?.message ?? e
+						);
+						return 0;
+					}),
+				8000,
+				0
+			),
 		]);
 
 		return {
@@ -248,7 +311,14 @@ export async function sendTransaction(
 
 	if (assetId === "ton") {
 		const contract = providers.ton.open(wallets.ton.contract);
-		let seqno = await contract.getSeqno().catch(() => 0);
+		let seqno: number;
+		try {
+			seqno = await contract.getSeqno();
+		} catch {
+			throw new Error(
+				"Failed to fetch wallet sequence number. Check your connection and try again."
+			);
+		}
 		await contract.sendTransfer({
 			seqno,
 			secretKey: wallets.ton.keyPair.secretKey,
@@ -315,8 +385,14 @@ export async function executeSymbiosisSwap(
 				"0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
 				"0x9328Eb759596C38a25f59028B146Fecdc3621Dfe",
 			];
-			if (!ALLOWED_CONTRACTS.includes(symbTx.approveTo.toLowerCase())) {
-				console.warn("[Symbiosis] approveTo not in allowlist:", symbTx.approveTo);
+			const normalizedApproveTo = symbTx.approveTo.toLowerCase();
+			const normalizedAllowlist = ALLOWED_CONTRACTS.map((a) =>
+				a.toLowerCase()
+			);
+			if (!normalizedAllowlist.includes(normalizedApproveTo)) {
+				throw new Error(
+					`Transaction blocked: approveTo address ${symbTx.approveTo} is not in the allowlist`
+				);
 			}
 			const approveTx = await activeWallet.sendTransaction({
 				to: symbTx.approveTo,
@@ -341,10 +417,14 @@ export async function executeSymbiosisSwap(
 
 	if (sourceChain === "ton") {
 		const contract = providers.ton.open(wallets.ton.contract);
-	const seqno = await contract.getSeqno().catch(() => {
-		console.warn("[executeSwap] Failed to fetch seqno, using 0");
-		return 0;
-	});
+		let seqno: number;
+		try {
+			seqno = await contract.getSeqno();
+		} catch {
+			throw new Error(
+				"Failed to fetch wallet sequence number. Check your connection and try again."
+			);
+		}
 		const transfer = contract.createTransfer({
 			seqno,
 			secretKey: wallets.ton.keyPair.secretKey,
@@ -353,7 +433,24 @@ export async function executeSymbiosisSwap(
 					to: Address.parse(symbTx.to),
 					value: BigInt(symbTx.value || "0"),
 					bounce: true,
-					body: Cell.fromBoc(Buffer.from(symbTx.data, "base64"))[0],
+					body: (() => {
+						let cells: Cell[];
+						try {
+							cells = Cell.fromBoc(
+								Buffer.from(symbTx.data, "base64")
+							);
+						} catch {
+							throw new Error(
+								"Invalid swap payload: cannot parse TON cell data"
+							);
+						}
+						if (cells.length !== 1) {
+							throw new Error(
+								`Swap payload BOC must contain exactly 1 root cell, got ${cells.length}`
+							);
+						}
+						return cells[0];
+					})(),
 				}),
 			],
 			sendMode: SendMode.PAY_GAS_SEPARATELY,
@@ -361,11 +458,8 @@ export async function executeSymbiosisSwap(
 		const txHash = transfer.message.hash().toString("hex");
 		const boc = transfer.message.toBoc(false);
 		const bocBase64 = Buffer.from(boc).toString("base64");
-		const endpoint =
-			mode === "mainnet"
-				? "https://toncenter.com/api/v2/sendBoc"
-				: "https://testnet.toncenter.com/api/v2/sendBoc";
-		const res = await fetch(endpoint, {
+		const endpoint = `${TONCENTER_BASE[mode]}/sendBoc`;
+		const res = await toncenterFetch(endpoint, {}, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ boc: bocBase64 }),
@@ -398,12 +492,33 @@ export async function executeSwap(
 	const providers = getProviders(mode);
 	const contract = providers.ton.open(wallets.ton.contract);
 
-	const seqno = await contract.getSeqno().catch(() => 0);
+	let seqno: number;
+	try {
+		seqno = await contract.getSeqno();
+	} catch {
+		throw new Error(
+			"Failed to fetch wallet sequence number. Check your connection and try again."
+		);
+	}
 
 	const internalMessages = messages.map((m) => {
-		const body = m.payload
-			? Cell.fromBoc(Buffer.from(m.payload, "base64"))[0]
-			: undefined;
+		let body: Cell | undefined;
+		if (m.payload) {
+			let cells: Cell[];
+			try {
+				cells = Cell.fromBoc(Buffer.from(m.payload, "base64"));
+			} catch {
+				throw new Error(
+					`Invalid payload format for message to ${m.target_address}`
+				);
+			}
+			if (cells.length !== 1) {
+				throw new Error(
+					`Payload BOC must contain exactly 1 root cell, got ${cells.length}`
+				);
+			}
+			body = cells[0];
+		}
 		return internal({
 			to: Address.parse(m.target_address),
 			value: BigInt(m.send_amount),
@@ -423,12 +538,9 @@ export async function executeSwap(
 	const boc = transfer.message.toBoc(false);
 	const bocBase64 = Buffer.from(boc).toString("base64");
 
-	const endpoint =
-		mode === "mainnet"
-			? "https://toncenter.com/api/v2/sendBoc"
-			: "https://testnet.toncenter.com/api/v2/sendBoc";
+	const endpoint = `${TONCENTER_BASE[mode]}/sendBoc`;
 
-	const res = await fetch(endpoint, {
+	const res = await toncenterFetch(endpoint, {}, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ boc: bocBase64 }),
@@ -462,38 +574,40 @@ export async function fetchTransactions(
 	mode: "mainnet" | "testnet" | "devnet"
 ): Promise<WalletTransaction[]> {
 	const cacheKey = `txs_${mode}_${address}`;
-	return cachedFetch(cacheKey, async () => {
-		const endpoint =
-			mode === "mainnet"
-				? "https://toncenter.com/api/v2/getTransactions"
-				: "https://testnet.toncenter.com/api/v2/getTransactions";
-
-		try {
-			const res = await fetch(`${endpoint}?address=${address}&limit=10&api_key=${TONCENTER_KEY}`);
-			const data = await res.json();
-			if (data.ok && Array.isArray(data.result)) {
-				return data.result.map((tx: any) => {
-					const outMsg = tx.out_msgs?.[0];
-					const inMsg = tx.in_msg;
-					const isOut = outMsg !== undefined;
-					const msg = isOut ? outMsg : inMsg;
-					const value = msg ? Number(msg.value) / 1e9 : 0;
-					return {
-						hash: tx.transaction_id?.hash || "unknown",
-						type: isOut ? "send" : "receive",
-						value,
-						from: inMsg?.source || "",
-						to: outMsg?.destination || inMsg?.destination || "",
-						timestamp: tx.utime * 1000,
-					};
-				});
+	return cachedFetch(
+		cacheKey,
+		async () => {
+			try {
+				const res = await toncenterFetch(
+					`${TONCENTER_BASE[mode]}/getTransactions`,
+					{ address, limit: "10" }
+				);
+				const data = await res.json();
+				if (data.ok && Array.isArray(data.result)) {
+					return data.result.map((tx: any) => {
+						const outMsg = tx.out_msgs?.[0];
+						const inMsg = tx.in_msg;
+						const isOut = outMsg !== undefined;
+						const msg = isOut ? outMsg : inMsg;
+						const value = msg ? Number(msg.value) / 1e9 : 0;
+						return {
+							hash: tx.transaction_id?.hash || "unknown",
+							type: isOut ? "send" : "receive",
+							value,
+							from: inMsg?.source || "",
+							to: outMsg?.destination || inMsg?.destination || "",
+							timestamp: tx.utime * 1000,
+						};
+					});
+				}
+				return [];
+			} catch (e) {
+				console.error("Error fetching transactions", e);
+				return [];
 			}
-			return [];
-		} catch (e) {
-			console.error("Error fetching transactions", e);
-			return [];
-		}
-	}, 30_000);
+		},
+		30_000
+	);
 }
 
 export async function registerUsername(
@@ -710,29 +824,39 @@ export async function evaluateReputationReal(
 
 		if (isTon) {
 			const parsed = Address.parse(targetAddress);
-			const state = await providers.ton.getContractState(parsed).catch(() => null);
+			const state = await providers.ton
+				.getContractState(parsed)
+				.catch(() => null);
 			if (state) {
 				isActive = state.state === "active";
 				balance = Number(state.balance) / 1e9;
 			}
 
-			const tcBase =
-				mode === "mainnet"
-					? "https://toncenter.com/api/v2"
-					: "https://testnet.toncenter.com/api/v2";
+			const [tcRes, tcTxRes] = await Promise.all([
+				toncenterFetch(
+					`${TONCENTER_BASE[mode]}/getAddressInformation`,
+					{ address: targetAddress }
+				)
+					.then((r) => r.json())
+					.catch(() => null),
+				toncenterFetch(`${TONCENTER_BASE[mode]}/getTransactions`, {
+					address: targetAddress,
+					limit: "100",
+				})
+					.then((r) => r.json())
+					.catch(() => null),
+			]);
 
-			const tcRes = await fetch(
-				`${tcBase}/getAddressInformation?address=${targetAddress}&api_key=${TONCENTER_KEY}`
-			).then(r => r.json()).catch(() => null);
 			if (tcRes?.ok && tcRes.result) {
 				balance = Number(tcRes.result.balance) / 1e9;
 				isActive = tcRes.result.state === "active";
 			}
 
-			const tcTxRes = await fetch(
-				`${tcBase}/getTransactions?address=${targetAddress}&limit=100&api_key=${TONCENTER_KEY}`
-			).then(r => r.json()).catch(() => null);
-			if (tcTxRes?.ok && Array.isArray(tcTxRes.result) && tcTxRes.result.length > 0) {
+			if (
+				tcTxRes?.ok &&
+				Array.isArray(tcTxRes.result) &&
+				tcTxRes.result.length > 0
+			) {
 				txCount = tcTxRes.result.length;
 				isActive = true;
 				let totalVol = 0;
@@ -740,12 +864,18 @@ export async function evaluateReputationReal(
 				tcTxRes.result.forEach((tx: any) => {
 					const outMsg = tx.out_msgs?.[0];
 					const inMsg = tx.in_msg;
-					const msgVal = outMsg ? Number(outMsg.value || 0) / 1e9 : inMsg ? Number(inMsg.value || 0) / 1e9 : 0;
+					const msgVal = outMsg
+						? Number(outMsg.value || 0) / 1e9
+						: inMsg
+						? Number(inMsg.value || 0) / 1e9
+						: 0;
 					totalVol += msgVal;
-					if (tx.utime && tx.utime * 1000 < oldest) oldest = tx.utime * 1000;
+					if (tx.utime && tx.utime * 1000 < oldest)
+						oldest = tx.utime * 1000;
 				});
 				volumeVal = totalVol;
-				accountAgeMonths = (Date.now() - oldest) / (1000 * 60 * 60 * 24 * 30);
+				accountAgeMonths =
+					(Date.now() - oldest) / (1000 * 60 * 60 * 24 * 30);
 			}
 		} else if (isEth) {
 			const [addrRes, txRes] = await Promise.all([
@@ -884,7 +1014,9 @@ export async function evaluateReputationReal(
 		colorClass = "text-[#ff453a]";
 	}
 
-		console.warn(`[WhyNot] On-chain score for ${clean}:`, { balance, txCount, volumeVal: volumeVal.toFixed(4), accountAgeMonths: accountAgeMonths.toFixed(1), score });
+	if (import.meta.env.DEV) {
+		console.debug(`[WhyNot] On-chain score computed:`, { score });
+	}
 
 	return {
 		score,

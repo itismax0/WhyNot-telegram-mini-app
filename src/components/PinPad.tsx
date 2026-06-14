@@ -1,16 +1,34 @@
+import { useState, useEffect } from "react";
 import { ShieldCheck, Delete } from "lucide-react";
 
 export const PinPad = ({
 	title,
-	pin,
-	setPin,
+	onComplete,
+	resetTrigger = 0,
 }: {
 	title: string;
-	pin: string;
-	setPin: (p: string) => void;
+	onComplete: (pin: string) => void;
+	resetTrigger?: number;
 }) => {
+	const [pin, setPin] = useState("");
+
+	useEffect(() => {
+		setPin("");
+	}, [resetTrigger]);
+
 	const handlePress = (num: string) => {
-		if (pin.length < 4) setPin(pin + num);
+		if (pin.length >= 4) return;
+		const next = pin + num;
+		if (next.length === 4) {
+			onComplete(next);
+			setPin("");
+		} else {
+			setPin(next);
+		}
+	};
+
+	const handleDelete = () => {
+		setPin((prev) => prev.slice(0, -1));
 	};
 
 	return (
@@ -52,7 +70,7 @@ export const PinPad = ({
 						0
 					</button>
 					<button
-						onClick={() => setPin(pin.slice(0, -1))}
+						onClick={handleDelete}
 						className="w-16 h-16 rounded-full mx-auto flex items-center justify-center text-gray-500 active:bg-[#1a1a1a] transition-all active:scale-95"
 					>
 						<Delete size={24} />
