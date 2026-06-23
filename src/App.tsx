@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import type {
+	CSSProperties,
+	PointerEvent as ReactPointerEvent,
+	SVGProps,
+} from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import {
-	ArrowLeftRight,
-	Grid2X2,
-	Settings,
-	Wallet,
-} from "lucide-react";
 import { WalletProvider, useWallet, getWalletData } from "./store/WalletContext";
 import {
 	WelcomeView,
@@ -33,6 +31,69 @@ import { SwapView } from "./views/SwapView";
 import { AIChatView } from "./views/AIChatView";
 import { ASSETS } from "./services/blockchain";
 
+interface NavIconProps extends SVGProps<SVGSVGElement> {
+	active?: boolean;
+}
+
+const WalletNavIcon = ({ active = false, ...props }: NavIconProps) => (
+	<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
+		<rect x="3.5" y="6.5" width="17" height="11" rx="4.2" strokeWidth={active ? 1.95 : 1.75} />
+		<path
+			d="M16.2 10.1H20.5V13.9H16.2C15.1 13.9 14.2 13.05 14.2 12C14.2 10.95 15.1 10.1 16.2 10.1Z"
+			strokeWidth={active ? 1.95 : 1.75}
+		/>
+		<circle cx="16.9" cy="12" r="0.8" fill="currentColor" stroke="none" />
+		<path d="M7 9.25H12" strokeWidth={active ? 1.9 : 1.7} strokeLinecap="round" />
+	</svg>
+);
+
+const ExchangeNavIcon = ({ active = false, ...props }: NavIconProps) => (
+	<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
+		<path
+			d="M6 8.25H17.75"
+			strokeWidth={active ? 1.95 : 1.75}
+			strokeLinecap="round"
+		/>
+		<path
+			d="M14.7 5.5L17.9 8.25L14.7 11"
+			strokeWidth={active ? 1.95 : 1.75}
+			strokeLinecap="round"
+			strokeLinejoin="round"
+		/>
+		<path
+			d="M18 15.75H6.25"
+			strokeWidth={active ? 1.95 : 1.75}
+			strokeLinecap="round"
+		/>
+		<path
+			d="M9.3 13L6.1 15.75L9.3 18.5"
+			strokeWidth={active ? 1.95 : 1.75}
+			strokeLinecap="round"
+			strokeLinejoin="round"
+		/>
+	</svg>
+);
+
+const SettingsNavIcon = ({ active = false, ...props }: NavIconProps) => (
+	<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
+		<circle cx="12" cy="12" r="3.15" strokeWidth={active ? 1.95 : 1.75} />
+		<path
+			d="M12 4.1V6.05M12 17.95V19.9M19.9 12H17.95M6.05 12H4.1M17.6 6.4L16.15 7.85M7.85 16.15L6.4 17.6M17.6 17.6L16.15 16.15M7.85 7.85L6.4 6.4"
+			strokeWidth={active ? 1.9 : 1.7}
+			strokeLinecap="round"
+		/>
+	</svg>
+);
+
+const MoreNavIcon = ({ active = false, ...props }: NavIconProps) => (
+	<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
+		<rect x="5" y="5" width="5.1" height="5.1" rx="1.6" strokeWidth={active ? 1.9 : 1.7} />
+		<rect x="13.9" y="5" width="5.1" height="5.1" rx="1.6" strokeWidth={active ? 1.9 : 1.7} />
+		<rect x="5" y="13.9" width="5.1" height="5.1" rx="1.6" strokeWidth={active ? 1.9 : 1.7} />
+		<rect x="13.9" y="13.9" width="5.1" height="5.1" rx="1.6" strokeWidth={active ? 1.9 : 1.7} />
+	</svg>
+);
+
 const COINGECKO_KEY = import.meta.env.VITE_COINGECKO_KEY ?? "";
 
 const WebApp = window.Telegram?.WebApp;
@@ -46,41 +107,34 @@ interface DragState {
 	isDragStarted: boolean;
 }
 
-interface SqueezeState {
-	animationKey: "a" | "b";
-	direction: "left" | "right";
-}
-
 const BottomNav = () => {
 	const { view, setView, language } = useWallet();
 	const capsuleRef = useRef<HTMLDivElement>(null);
 	const dragRef = useRef<DragState | undefined>(undefined);
 	const previewIndexRef = useRef<number | undefined>(undefined);
 	const detachAbortRef = useRef<VoidFunction | undefined>(undefined);
-	const prevActiveRef = useRef(0);
 	const suppressClickRef = useRef(false);
 	const [previewIndex, setPreviewIndex] = useState<number | undefined>(undefined);
 	const [isDragging, setIsDragging] = useState(false);
-	const [squeeze, setSqueeze] = useState<SqueezeState | undefined>(undefined);
 	const items = [
 		{
 			id: "main",
-			icon: Wallet,
+			icon: WalletNavIcon,
 			label: language === "ru" ? "Кошелек" : "Wallet",
 		},
 		{
 			id: "swap",
-			icon: ArrowLeftRight,
+			icon: ExchangeNavIcon,
 			label: language === "ru" ? "Обмен" : "Exchange",
 		},
 		{
 			id: "settings",
-			icon: Settings,
+			icon: SettingsNavIcon,
 			label: language === "ru" ? "Настройки" : "Settings",
 		},
 		{
 			id: "more",
-			icon: Grid2X2,
+			icon: MoreNavIcon,
 			label: language === "ru" ? "Еще" : "More",
 		},
 	] as const;
@@ -89,18 +143,6 @@ const BottomNav = () => {
 		items.findIndex(({ id }) => id === view),
 	);
 	const renderedIndex = previewIndex ?? activeIndex;
-
-	useEffect(() => {
-		if (prevActiveRef.current === activeIndex) return;
-
-		const direction = activeIndex > prevActiveRef.current ? "right" : "left";
-		prevActiveRef.current = activeIndex;
-
-		setSqueeze((previous) => ({
-			animationKey: previous?.animationKey === "a" ? "b" : "a",
-			direction,
-		}));
-	}, [activeIndex]);
 
 	useEffect(() => {
 		return () => {
@@ -131,7 +173,10 @@ const BottomNav = () => {
 
 			detachAbortRef.current?.();
 
-			if (dragRef.current?.pointerId === event.pointerId && !dragRef.current.isDragStarted) {
+			if (
+				dragRef.current?.pointerId === event.pointerId &&
+				!dragRef.current.isDragStarted
+			) {
 				dragRef.current = undefined;
 			}
 		};
@@ -214,60 +259,72 @@ const BottomNav = () => {
 
 	return (
 		<motion.nav
-			initial={{ y: 120, opacity: 0, scale: 0.92 }}
-			animate={{ y: 0, opacity: 1, scale: 1 }}
-			exit={{ y: 120, opacity: 0, scale: 0.92 }}
-			transition={{ type: "spring", damping: 26, stiffness: 240, mass: 0.9 }}
-			className="fixed left-2 right-2 z-40 mx-auto max-w-[480px]"
+			initial={{ y: 44, opacity: 0 }}
+			animate={{ y: 0, opacity: 1 }}
+			exit={{ y: 44, opacity: 0 }}
+			transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+			className="fixed left-0 right-0 z-40 mx-auto max-w-[480px] px-3"
 			style={{
 				bottom: "max(10px, env(safe-area-inset-bottom, 10px))",
 			}}
 		>
 			<div
 				ref={capsuleRef}
-				className={`liquid-nav-capsule ${isDragging ? "is-dragging" : ""}`}
+				className={`minimal-nav ${isDragging ? "is-dragging" : ""}`}
 				style={
 					{
 						"--tab-count": items.length,
 						"--active-index": activeIndex,
-					} as React.CSSProperties
+					} as CSSProperties
 				}
 				onPointerDown={handlePointerDown}
 				onPointerMove={handlePointerMove}
 				onPointerUp={(event) => finishDrag(event, true)}
 				onPointerCancel={(event) => finishDrag(event, false)}
 			>
-				<div className={`liquid-nav-pill-wrapper ${isDragging ? "dragging" : ""}`}>
-					<div className="liquid-nav-pill" data-direction={squeeze?.direction}>
-						<div
-							className={`liquid-nav-pill-inner ${
-								squeeze?.animationKey === "a" ? "squeezeA" : "squeezeB"
-							}`}
-						/>
-					</div>
-				</div>
-				<div className="relative z-10 grid grid-cols-4">
+				<div className={`minimal-nav-indicator ${isDragging ? "dragging" : ""}`} />
+				<div className="minimal-nav-grid">
 					{items.map(({ id, icon: Icon, label }, index) => {
 						const highlighted = renderedIndex === index;
 						return (
 							<button
 								key={id}
 								type="button"
-								data-nav-index={index}
 								onClick={() => {
 									if (!suppressClickRef.current) setView(id);
 								}}
-								className={`liquid-nav-button ${
-									highlighted ? "is-highlighted" : ""
-								}`}
+								className={`minimal-nav-button ${highlighted ? "is-active" : ""}`}
 								aria-label={label}
 							>
-								<span className="liquid-nav-icon">
-									<Icon size={29} strokeWidth={highlighted ? 2.6 : 2.15} />
-								</span>
-								<span className={`liquid-nav-label ${highlighted ? "is-active" : ""}`}>
+								<motion.span
+									className="minimal-nav-icon-wrap"
+									animate={{
+										y: highlighted ? -1.5 : 0,
+										scale: highlighted ? 1.06 : 1,
+										rotate: highlighted ? [0, -3, 2, 0] : 0,
+									}}
+									transition={{
+										duration: highlighted ? 0.34 : 0.2,
+										 ease: [0.22, 1, 0.36, 1],
+									}}
+								>
+									<Icon
+										className="minimal-nav-icon"
+										active={highlighted}
+										width={24}
+										height={24}
+									/>
+								</motion.span>
+								<motion.span
+									className="minimal-nav-label"
+									animate={{
+										opacity: highlighted ? 1 : 0.74,
+										y: highlighted ? 0 : 0.5,
+									}}
+									transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+								>
 									{label}
-								</span>
+								</motion.span>
 							</button>
 						);
 					})}
