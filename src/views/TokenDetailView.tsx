@@ -47,7 +47,7 @@ const AI_BULLETS: Record<string, { en: string[]; ru: string[] }> = {
 	},
 	ton: {
 		en: ["Strong ecosystem backed by TON Foundation", "Active wallets grew +28% in last 30 days", "High developer activity on GitHub", "Volatility below market average"],
-		ru: ["Сильная экосистема при поддержке TON Foundation", "Рост числа активных кошельков +28% за 30 дней", "Высокая активность разработчиков на GitHub", "Волатильность ниже среднего по рынку"],
+		ru: ["Экосистема TON при поддержке TON Foundation", "Рост числа активных кошельков +28% за 30 дней", "Высокая активность разработчиков на GitHub", "Волатильность ниже среднего по рынку"],
 	},
 	eth: {
 		en: ["Largest smart contract ecosystem globally", "ETF approval drives institutional demand", "Staking yield ~4% APR via validators", "Layer-2 adoption accelerating rapidly"],
@@ -73,8 +73,8 @@ const ABOUT: Record<string, { en: string; ru: string }> = {
 		ru: "Токен WhyNot? — это утилитарный токен управления экосистемы WhyNot?. Он обеспечивает работу функций AI-ассистента, расширение облачного хранилища и вознаграждение активных участников сообщества в блокчейне TON.",
 	},
 	ton: {
-		en: "Toncoin is the native cryptocurrency of the TON blockchain. Used to pay transaction fees, participate in staking and network governance. Fast transactions and high scalability.",
-		ru: "Toncoin — нативная криптовалюта блокчейна TON. Используется для оплаты комиссий, стейкинга и участия в управлении сетью. Быстрые транзакции и высокая масштабируемость.",
+		en: "Gram is the native cryptocurrency of the TON blockchain. Used to pay transaction fees, participate in staking and network governance. Fast transactions and high scalability.",
+		ru: "Gram — нативная криптовалюта блокчейна TON. Используется для оплаты комиссий, стейкинга и участия в управлении сетью. Быстрые транзакции и высокая масштабируемость.",
 	},
 	eth: {
 		en: "Ethereum is a decentralized, open-source blockchain with smart contract functionality. The native currency Ether fuels the world's largest DeFi and NFT ecosystem.",
@@ -123,19 +123,19 @@ interface NewsItem {
 	publishedAt: number;
 }
 
-function fmt(n: number, currency: "usd" | "eur" | "rub") {
-	if (n >= 1e9) return `${formatFiat(n / 1e9, currency, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}B`;
-	if (n >= 1e6) return `${formatFiat(n / 1e6, currency, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}M`;
-	return formatFiat(n, currency);
+export function fmt(n: number) {
+	if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
+	if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
+	return `$${n.toLocaleString()}`;
 }
 
-function fmtNum(n: number) {
+export function fmtNum(n: number) {
 	if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
 	if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
 	return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
-function timeAgo(ts: number, isRu: boolean): string {
+export function timeAgo(ts: number, isRu: boolean): string {
 	const diff = Math.floor((Date.now() / 1000) - ts);
 	if (diff < 3600) {
 		const m = Math.floor(diff / 60);
@@ -150,7 +150,7 @@ function timeAgo(ts: number, isRu: boolean): string {
 }
 
 // Binance interval + limit per period
-function binanceParams(period: Period): { interval: string; limit: number } {
+export function binanceParams(period: Period): { interval: string; limit: number } {
 	switch (period) {
 		case "1":   return { interval: "1h",  limit: 24 };
 		case "7":   return { interval: "4h",  limit: 42 };
@@ -161,7 +161,7 @@ function binanceParams(period: Period): { interval: string; limit: number } {
 	}
 }
 
-function formatPointDate(timestamp: number, period: Period, isRu: boolean) {
+export function formatPointDate(timestamp: number, period: Period, isRu: boolean) {
 	const date = new Date(timestamp);
 	if (period === "1") {
 		return date.toLocaleTimeString(isRu ? "ru-RU" : "en-US", { hour: "2-digit", minute: "2-digit" });
