@@ -123,10 +123,10 @@ interface NewsItem {
 	publishedAt: number;
 }
 
-export function fmt(n: number) {
-	if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
-	if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
-	return `$${n.toLocaleString()}`;
+function fmt(n: number, currency: "usd" | "eur" | "rub") {
+	if (n >= 1e9) return `${formatFiat(n / 1e9, currency, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}B`;
+	if (n >= 1e6) return `${formatFiat(n / 1e6, currency, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}M`;
+	return formatFiat(n, currency);
 }
 
 export function fmtNum(n: number) {

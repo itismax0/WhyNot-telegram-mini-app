@@ -115,6 +115,11 @@ export const ASSETS = [
 		network: "TON",
 		cmc_id: "the-open-network",
 		icon: "https://i.ibb.co/Jw5NfHz1/image.png",
+		address: "EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c",
+		decimals: 9,
+		swappable: true,
+		chainId: 85918,
+		symbiosisAddress: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
 	},
 	{
 		id: "eth",
