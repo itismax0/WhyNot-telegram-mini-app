@@ -29,6 +29,7 @@ import { TokenDetailView } from "./views/TokenDetailView";
 import { SettingsView } from "./views/SettingsView";
 import { SwapView } from "./views/SwapView";
 import { AIChatView } from "./views/AIChatView";
+import { CardView } from "./views/CardView";
 import { ASSETS } from "./services/blockchain";
 
 interface NavIconProps extends SVGProps<SVGSVGElement> {
@@ -94,6 +95,32 @@ const MoreNavIcon = ({ active = false, ...props }: NavIconProps) => (
 	</svg>
 );
 
+const CardNavIcon = ({ active = false, ...props }: NavIconProps) => (
+	<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
+		<rect
+			x="3"
+			y="5"
+			width="18"
+			height="14"
+			rx="3.5"
+			strokeWidth={active ? 1.95 : 1.75}
+		/>
+		<path
+			d="M3 9.5H21"
+			strokeWidth={active ? 1.95 : 1.75}
+		/>
+		<rect
+			x="6"
+			y="13"
+			width="3"
+			height="2"
+			rx="0.5"
+			fill="currentColor"
+			stroke="none"
+		/>
+	</svg>
+);
+
 const COINGECKO_KEY = import.meta.env.VITE_COINGECKO_KEY ?? "";
 
 const WebApp = window.Telegram?.WebApp;
@@ -126,6 +153,11 @@ const BottomNav = () => {
 			id: "swap",
 			icon: ExchangeNavIcon,
 			label: language === "ru" ? "Обмен" : "Exchange",
+		},
+		{
+			id: "card",
+			icon: CardNavIcon,
+			label: language === "ru" ? "Карта" : "Card",
 		},
 		{
 			id: "settings",
@@ -345,7 +377,7 @@ const AppContent = () => {
 		wallets,
 		lockWallet,
 	} = useWallet();
-	const showBottomNav = ["main", "swap", "settings", "more"].includes(view);
+	const showBottomNav = ["main", "swap", "card", "settings", "more"].includes(view);
 	const walletSyncCheckedRef = useRef(false);
 	const lastActivityRef = useRef(0);
 	const hiddenAtRef = useRef<number | null>(null);
@@ -501,6 +533,7 @@ const AppContent = () => {
 					{view === "swap" && <SwapView key="swap" />}
 					{view === "history" && <HistoryView key="history" />}
 					{view === "settings" && <SettingsView key="settings" />}
+					{view === "card" && <CardView key="card" />}
 					{view === "more" && <MoreView key="more" />}
 					{view === "vpn" && <VPNView key="vpn" />}
 					{view === "cloud" && <CloudView key="cloud" />}

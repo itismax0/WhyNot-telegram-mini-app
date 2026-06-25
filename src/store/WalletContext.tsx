@@ -34,6 +34,7 @@ type ViewState =
 	| "staking"
 	| "gifts"
 	| "token_detail"
+	| "card"
 	| "ai";
 type NetworkMode = "mainnet" | "testnet" | "devnet";
 type Language = "en" | "ru";
@@ -418,6 +419,25 @@ export const translations: Record<Language, Record<string, string>> = {
 		pin_enter: "Enter PIN",
 		pin_too_simple: "PIN is too simple. Please choose another.",
 		enter_pin: "Enter PIN",
+		nav_wallet: "Wallet",
+		nav_exchange: "Exchange",
+		nav_card: "Card",
+		nav_settings: "Settings",
+		nav_more: "More",
+		my_cards: "My cards",
+		recent_ops: "Recent operations",
+		see_all: "See all",
+		virtual: "VIRTUAL",
+		card_details: "Details",
+		freeze_card: "Freeze",
+		unfreeze_card: "Unfreeze",
+		limits: "Limits",
+		more_actions: "More",
+		card_number: "Card Number",
+		expiry_date: "Expiry Date",
+		cvv: "CVV",
+		cardholder: "Cardholder",
+		add_card: "Add Card",
 	},
 	ru: {
 		welcome_desc:
@@ -495,6 +515,25 @@ export const translations: Record<Language, Record<string, string>> = {
 		pin_enter: "Введите PIN",
 		pin_too_simple: "Слишком простой PIN. Выберите другой.",
 		enter_pin: "Введите PIN",
+		nav_wallet: "Кошелек",
+		nav_exchange: "Обмен",
+		nav_card: "Карта",
+		nav_settings: "Настройки",
+		nav_more: "Еще",
+		my_cards: "Мои карты",
+		recent_ops: "Последние операции",
+		see_all: "Смотреть все",
+		virtual: "VIRTUAL",
+		card_details: "Реквизиты",
+		freeze_card: "Заморозить",
+		unfreeze_card: "Разморозить",
+		limits: "Лимиты",
+		more_actions: "Еще",
+		card_number: "Номер карты",
+		expiry_date: "Срок действия",
+		cvv: "CVV",
+		cardholder: "Владелец карты",
+		add_card: "Создать карту",
 	},
 };
 
