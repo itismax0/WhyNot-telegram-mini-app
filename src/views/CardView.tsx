@@ -128,7 +128,7 @@ export const CardView = () => {
 			const saved = localStorage.getItem("whynot_card_txs");
 			if (saved) {
 				const parsed = JSON.parse(saved);
-				if (Array.isArray(parsed)) return parsed.map(migrateTx);
+				if (Array.isArray(parsed)) return parsed.map((tx) => migrateTx(tx));
 			}
 		} catch { /* ignore */ }
 		return [
