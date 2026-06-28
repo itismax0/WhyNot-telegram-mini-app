@@ -407,7 +407,7 @@ export const CardView = () => {
 		const name = newCardName.trim() || (language === "ru" ? "Моя карта" : "My Card");
 		const res = await createCard({
 			initialAmount: newInitAmount,
-			network: newCardBrand,
+			network: "visa",
 			userRef,
 			holderName,
 		});
@@ -595,7 +595,6 @@ export const CardView = () => {
 							onClose={() => setActiveModal("none")}
 							onCreate={handleCreateCard}
 							playHaptic={playHaptic}
-							embedded
 						/>
 					)}
 				</AnimatePresence>
@@ -990,7 +989,6 @@ export const CardView = () => {
 									onClose={() => setActiveModal("none")}
 									onCreate={handleCreateCard}
 									playHaptic={playHaptic}
-									embedded
 								/>
 							)}
 
@@ -1652,7 +1650,7 @@ function AddCardSheet({
 											dragConstraints={{ left: 0, right: 220 }}
 											dragElastic={0.1}
 											dragMomentum={false}
-											onDragEnd={(e, info) => {
+											onDragEnd={(_e, info) => {
 												if (info.offset.x > 180) {
 													if (termsAccepted) {
 														setSlideCompleted(true);
