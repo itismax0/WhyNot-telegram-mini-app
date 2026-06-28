@@ -4,6 +4,7 @@ import { QRCodeSVG } from "qrcode.react";
 import {
 	ArrowDownToLine,
 	ArrowUpRight,
+	CreditCard,
 	Eye,
 	EyeOff,
 	ChevronLeft,
@@ -466,6 +467,11 @@ export const MainView = () => {
 						id: "send",
 						icon: <ArrowUpRight size={24} />,
 						label: t("send"),
+					},
+					{
+						id: "card",
+						icon: <CreditCard size={24} />,
+						label: t("nav_card"),
 					},
 					{
 						id: "history",
@@ -1804,6 +1810,15 @@ export const HistoryView = () => {
 export const MoreView = () => {
 	const { setView, language, t } = useWallet();
 	const items = [
+		{
+			id: "card",
+			title: language === "ru" ? "Виртуальная карта" : "Virtual Card",
+			description:
+				language === "ru"
+					? "Криптокарта для оплаты везде"
+					: "Crypto card for payments worldwide",
+			icon: CreditCard,
+		},
 		{
 			id: "vpn",
 			title: "VPN",

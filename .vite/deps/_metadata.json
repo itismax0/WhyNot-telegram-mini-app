@@ -1,0 +1,94 @@
+{
+  "hash": "474a711b",
+  "configHash": "bca7f01c",
+  "lockfileHash": "10831a2b",
+  "browserHash": "219a71fd",
+  "optimized": {
+    "@solana/web3.js": {
+      "src": "../../node_modules/@solana/web3.js/lib/index.browser.esm.js",
+      "file": "@solana_web3__js.js",
+      "fileHash": "d92b2e07",
+      "needsInterop": false
+    },
+    "@supabase/supabase-js": {
+      "src": "../../node_modules/@supabase/supabase-js/dist/index.mjs",
+      "file": "@supabase_supabase-js.js",
+      "fileHash": "29786556",
+      "needsInterop": false
+    },
+    "@ton/crypto": {
+      "src": "../../node_modules/@ton/crypto/dist/index.js",
+      "file": "@ton_crypto.js",
+      "fileHash": "5ab227f0",
+      "needsInterop": true
+    },
+    "@ton/ton": {
+      "src": "../../node_modules/@ton/ton/dist/index.js",
+      "file": "@ton_ton.js",
+      "fileHash": "5ba1f405",
+      "needsInterop": true
+    },
+    "buffer": {
+      "src": "../../node_modules/buffer/index.js",
+      "file": "buffer.js",
+      "fileHash": "1363d075",
+      "needsInterop": true
+    },
+    "ethers": {
+      "src": "../../node_modules/ethers/lib.esm/index.js",
+      "file": "ethers.js",
+      "fileHash": "1eb8277d",
+      "needsInterop": false
+    },
+    "framer-motion": {
+      "src": "../../node_modules/framer-motion/dist/es/index.mjs",
+      "file": "framer-motion.js",
+      "fileHash": "a7ce89b3",
+      "needsInterop": false
+    },
+    "lucide-react": {
+      "src": "../../node_modules/lucide-react/dist/esm/lucide-react.mjs",
+      "file": "lucide-react.js",
+      "fileHash": "3ed74f7f",
+      "needsInterop": false
+    },
+    "qrcode.react": {
+      "src": "../../node_modules/qrcode.react/lib/esm/index.js",
+      "file": "qrcode__react.js",
+      "fileHash": "4df43725",
+      "needsInterop": false
+    },
+    "react-dom/client": {
+      "src": "../../node_modules/react-dom/client.js",
+      "file": "react-dom_client.js",
+      "fileHash": "814c7d2d",
+      "needsInterop": true
+    },
+    "react": {
+      "src": "../../node_modules/react/index.js",
+      "file": "react.js",
+      "fileHash": "65e8d4f3",
+      "needsInterop": true
+    },
+    "react/jsx-dev-runtime": {
+      "src": "../../node_modules/react/jsx-dev-runtime.js",
+      "file": "react_jsx-dev-runtime.js",
+      "fileHash": "35073fb8",
+      "needsInterop": true
+    }
+  },
+  "chunks": {
+    "buffer-B-gNRaa9": {
+      "file": "buffer-B-gNRaa9.js",
+      "isDynamicEntry": false
+    },
+    "chunk-Cf1989ZW": {
+      "file": "chunk-Cf1989ZW.js",
+      "isDynamicEntry": false
+    },
+    "dist-DfDiDqGP": {
+      "file": "dist-DfDiDqGP.js",
+      "isDynamicEntry": false
+    }
+  }
+}
